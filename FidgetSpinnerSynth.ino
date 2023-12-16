@@ -26,12 +26,12 @@ const int CONTROL_RATE_HZ = 128; // Hz, so 15.6 ms
 const float CONTROL_RATE_MS = 1.0/CONTROL_RATE_HZ*1000.0;
 const int SPEED_CALC_MULTIPLIER = 15;
 const int PULSES_PER_REVOLUTION = 3;
-int synthType = 0;
+int synthType = 1;
 
 void setup(){
   startMozzi(CONTROL_RATE_HZ); // Run in 64 Hz => 15.6 ms cycle time for encoders.
   aBamboo0.setFreq((float) BAMBOO_00_2048_SAMPLERATE / (float) (BAMBOO_00_2048_NUM_CELLS*1.0)); // play at the speed it was recorded at
-  if(synthType = 0)
+  if(synthType == 0)
   {
     //noteDelay.set(2000); // 2 second countdown
   }
@@ -88,7 +88,6 @@ void updateControl(){
     count = 0;
     //Serial.println(speed);
   }
-
   if(synthType == 0)
   {
   // ADSR synth
@@ -110,10 +109,10 @@ void updateControl(){
       if (altSpeed < 1) {altSpeed = 1;}
       attack = 5;
       decay = 200/altSpeed/altSpeed;
-      sustain = 500/altSpeed;
-      release_ms = 5000/altSpeed/altSpeed;
+      sustain = 600/altSpeed;
+      release_ms = 4000/altSpeed/altSpeed;
       //int delayTime
-      noteDelay.start(map(speed+2, 0, 20, 500, 100));//attack+decay+sustain+release_ms);
+      noteDelay.start(map(speed+2, 0, 20, 700, 100));//attack+decay+sustain+release_ms);
       //Serial.println(attack+decay+sustain+release_ms);
     }
   }
