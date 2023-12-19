@@ -22,8 +22,8 @@ Sample <BAMBOO_00_2048_NUM_CELLS, AUDIO_RATE>aBamboo0(BAMBOO_00_2048_DATA); // u
 EventDelay kTriggerDelay; // for scheduling audio gain changes
 
 // HARDWARE CONFIG
-const int N_FIDGET_SPINNERS = 1;
-const int ENCODER_PINS[N_FIDGET_SPINNERS] = {2};//,3,4,5,6,7,8,10};
+const int N_FIDGET_SPINNERS = 8;
+const int ENCODER_PINS[N_FIDGET_SPINNERS] = {2,3,4,5,6,7,8,10};
 
 // SOFTWARE CONFIG, DON'T TOUCH
 const int CONTROL_RATE_HZ = 128; // Hz, so 15.6 ms
@@ -166,9 +166,9 @@ void prepareSound(int mode)
         if (altSpeed < 1) {altSpeed = 1;}
         attack = 5;
         decay = 200/altSpeed/altSpeed;
-        sustain = 600/altSpeed;
-        release_ms = 4000/altSpeed/altSpeed;
-        noteDelay.start(map(speed[0]+2, 0, 20, 700, 40));//attack+decay+sustain+release_ms);
+        sustain = 1000/altSpeed;
+        release_ms = 1000/altSpeed/altSpeed;
+        noteDelay.start(map(speed[0]+2, 0, 20, 400, 40));//attack+decay+sustain+release_ms);
       }
     }
     
@@ -196,11 +196,9 @@ void prepareSound(int mode)
 
 void updateControl(){
   updateAllSpeeds();
-  //speed[0] = 10;
   processSerialInput();
   prepareSound(soundMode);
 }
-
 
 AudioOutput_t updateAudio(){
   if (soundMode==ADSR_MODE)
