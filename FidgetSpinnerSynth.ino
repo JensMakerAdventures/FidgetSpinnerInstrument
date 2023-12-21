@@ -5,7 +5,7 @@
 #include <mozzi_midi.h>
 #include <Midier.h>
 
-// INCLUDES FOR: ADSR synth (type 0)
+// ADSR synth (type 0)
 #include <Oscil.h>
 #include <ADSR.h>
 #include <tables/sin8192_int8.h>
@@ -15,23 +15,27 @@ ADSR <AUDIO_RATE, AUDIO_RATE> envelope;
 boolean note_is_on = true;
 unsigned int duration, attack, decay, sustain, release_ms;
 
-// INCLUDES FOR: Bamboo sound sampler (type 1)
+// Bamboo sound sampler (type 1)
 #include <Sample.h> // Sample template
 #include <samples/bamboo/bamboo_00_2048_int8.h> // wavetable data
 Sample <BAMBOO_00_2048_NUM_CELLS, AUDIO_RATE>aBamboo0(BAMBOO_00_2048_DATA); // use: Sample <table_size, update_rate> SampleName (wavetable)
 EventDelay kTriggerDelay; // for scheduling audio gain changes
+
+// Arp
+midier::Degree scaleDegree = 1; // counter for the arp
 
 // HARDWARE CONFIG
 const int N_FIDGET_SPINNERS = 8;
 const int ENCODER_PINS[N_FIDGET_SPINNERS] = {2,3,4,5,6,7,8,10};
 
 // SOFTWARE CONFIG, DON'T TOUCH
-const int CONTROL_RATE_HZ = 128; // Hz, so 15.6 ms
+const int CONTROL_RATE_HZ = 128; // 128 Hz, so 15.6 ms is needed to get  max fidget spinner speed correctly
 const float CONTROL_RATE_MS = 1.0/CONTROL_RATE_HZ*1000.0;
 const int SPEED_CALC_DIVIDER = 15;
 const int PULSES_PER_REVOLUTION = 3;
 
 int soundMode = 0;
+bool arpIsOn;
 enum SoundMode {ADSR_MODE, BAMBOO_MODE};
 
 void setup(){
@@ -41,8 +45,10 @@ void setup(){
   {
     pinMode(ENCODER_PINS[i], INPUT);
   }
+
   Serial.begin(9600);
   setSoundMode(BAMBOO_MODE);
+  enableArpMode();
 }
 
 void setSoundMode(int mode)
@@ -56,6 +62,38 @@ void setSoundMode(int mode)
     soundMode = BAMBOO_MODE;
     kTriggerDelay.set(300); // countdown ms, within resolution of CONTROL_RATE 
   }
+}
+
+void enableArpMode()
+{
+  arpIsOn = true;
+  scaleDegree = 1;
+}
+
+void disableArpMode()
+{
+  arpIsOn = false;
+}
+
+midier::Note nextArpNote()
+{
+  if (scaleDegree > 8)
+  {
+    scaleDegree = 1;
+  }
+  const midier::Mode mode = midier::Mode::Ionian;
+  const midier::Note scaleRoot = midier::Note::G;
+
+  // determine the interval from the root of the scale to the chord of this scale degree
+  const midier::Interval interval = midier::scale::interval(mode, scaleDegree);
+  
+
+  // calculate the root note of the chord of this scale degree
+  const midier::Note chordRoot = scaleRoot + interval;
+  //Serial.println((int)chordRoot);
+  scaleDegree++;
+
+  return chordRoot;
 }
 
 
@@ -73,7 +111,7 @@ long speedCalcCount;
 long count[N_FIDGET_SPINNERS];
 bool prevState[N_FIDGET_SPINNERS];
 bool state[N_FIDGET_SPINNERS];
-float speed[N_FIDGET_SPINNERS];
+byte speed[N_FIDGET_SPINNERS];
 
 float mapFloat(float x, float in_min, float in_max, float out_min, float out_max)
 {
@@ -103,10 +141,11 @@ void updateSpeed(int i) // index 0-N_FIDGET_SPINNERS
   // Calculate the speed averating the pulses made over the last cycles
   if(speedCalcCount == SPEED_CALC_DIVIDER)
   {
-    speed[i] = (float)count[i] / (float)PULSES_PER_REVOLUTION / ((float)SPEED_CALC_DIVIDER*((float)CONTROL_RATE_MS/1000.0));
+    speed[i] = byte((float)count[i] / (float)PULSES_PER_REVOLUTION / ((float)SPEED_CALC_DIVIDER*((float)CONTROL_RATE_MS/1000.0)));
     if (speed[i] > 20) {speed[i] = 20;}
     speedCalcCount = 0;
     memset(count,0,sizeof(count));
+    
   }
 }
 
@@ -128,8 +167,15 @@ void processSerialInput()
         setSoundMode(1);
       }
     }
-    else if(command.equals("send")){
-      //send_message();
+    else if(command.startsWith("arp")){
+      if(command.endsWith("On")){
+        Serial.println("Arp enabled");
+        enableArpMode();
+      }
+      if(command.endsWith("Off")){
+        Serial.println("Arp disabled");
+        disableArpMode();
+      }
     }
     else if(command.equals("data")){
       //get_data();
@@ -150,7 +196,7 @@ void prepareSound(int mode)
     case ADSR_MODE:
     {
       if(noteDelay.ready())
-      {
+      { 
         byte attack_level = 255;//rand(128)+127;
         byte decay_level = 255;//rand(255);
         envelope.setADLevels(attack_level,decay_level);
@@ -177,7 +223,18 @@ void prepareSound(int mode)
       if(kTriggerDelay.ready()){
         kTriggerDelay.set(map(speed[0]+2, 0, 20, 300, 30));
         float pitchChange = mapFloat(speed[0]+2.0, 0.0, 20.0, 0.8, 1.5);
-        aBamboo0.setFreq((float) BAMBOO_00_2048_SAMPLERATE / (float) (BAMBOO_00_2048_NUM_CELLS)*pitchChange);
+        if (arpIsOn)
+        {
+          midier::Note note = nextArpNote();
+          midier::midi::Number midiNote = midier::midi::number(note, -1);
+          Serial.println(mtof((int)midiNote));
+          aBamboo0.setFreq(mtof((int)midiNote)); // gives 12-13-15-16-18-20-23-24, but 12-13-15 all turn out as the same note. Why??
+        }
+        else
+        {
+          aBamboo0.setFreq((float) BAMBOO_00_2048_SAMPLERATE / (float) (BAMBOO_00_2048_NUM_CELLS)*pitchChange);
+        }
+        
 
         if(speed[0]==0)
         {
@@ -196,6 +253,7 @@ void prepareSound(int mode)
 
 void updateControl(){
   updateAllSpeeds();
+  speed[0] = 8;
   processSerialInput();
   prepareSound(soundMode);
 }
@@ -205,14 +263,13 @@ AudioOutput_t updateAudio(){
   {
     envelope.update();
     return MonoOutput::from16Bit((int) (envelope.next() * aOscil.next()));
-    
   }
   
   else if (soundMode == BAMBOO_MODE)
   {
-    int asig= (int)((long) aBamboo0.next()*gains.gain0)>>4;
-    // clip to keep sample loud but still in range
-    return MonoOutput::fromAlmostNBit(9, asig)/2;//.clip();
+    int asig = (int)
+    ((long) aBamboo0.next()*gains.gain0)>>4;
+    return MonoOutput::fromAlmostNBit(9, asig).clip();
   }
 }
 
