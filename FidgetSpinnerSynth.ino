@@ -102,8 +102,6 @@ midier::Note nextArpNote()
   {
     scaleDegree = 1;
   }
-  Serial.println(scaleDegree);
-
 
   // determine the interval from the root of the scale to the chord of this scale degree
   const midier::Interval interval = midier::scale::interval(arpMode, scaleDegree);
@@ -215,7 +213,6 @@ void prepareSound(int mode)
   {
     case ADSR_MODE:
     {
-      Serial.println(noteDelay.ready());
       if((noteDelay.ready() & (speed[0] != 0)))
       {       
         if (arpIsOn)
@@ -295,7 +292,7 @@ AudioOutput_t updateAudio(){
   if (soundMode==ADSR_MODE)
   {
     envelope.update();
-    return MonoOutput::from16Bit((int) (envelope.next() * aOscil.next()));
+    return MonoOutput::from16Bit((int) (envelope.next() * aOscil.next() * 2));
   }
   
   else if (soundMode == BAMBOO_MODE)
