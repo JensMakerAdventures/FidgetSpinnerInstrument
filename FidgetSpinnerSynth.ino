@@ -23,6 +23,8 @@ EventDelay kTriggerDelay; // for scheduling audio gain changes
 
 // Arp
 midier::Degree scaleDegree = 1; // counter for the arp
+midier::Mode arpMode = midier::Mode::Ionian;
+midier::Note scaleRoot = midier::Note::G;
 
 // HARDWARE CONFIG
 const int N_FIDGET_SPINNERS = 8;
@@ -47,7 +49,7 @@ void setup(){
   }
 
   Serial.begin(9600);
-  setSoundMode(BAMBOO_MODE);
+  setSoundMode(ADSR_MODE);
   enableArpMode();
 }
 
@@ -75,19 +77,37 @@ void disableArpMode()
   arpIsOn = false;
 }
 
+void nextArpMode()
+{
+  if ((int)arpMode > (int)midier::Mode::Count)
+  {
+    arpMode = (midier::Mode)0;
+    return;
+  }
+  arpMode = (midier::Mode)((int)arpMode + 1);
+}
+
+void nextRootNote()
+{
+  if (scaleRoot == midier::Note::G)
+  {
+    scaleRoot = (midier::Note)0;
+  }
+  scaleRoot = (midier::Note)((int)scaleRoot + 1);
+}
+
 midier::Note nextArpNote()
 {
   if (scaleDegree > 8)
   {
     scaleDegree = 1;
   }
-  const midier::Mode mode = midier::Mode::Ionian;
-  const midier::Note scaleRoot = midier::Note::G;
+  Serial.println(scaleDegree);
+
 
   // determine the interval from the root of the scale to the chord of this scale degree
-  const midier::Interval interval = midier::scale::interval(mode, scaleDegree);
+  const midier::Interval interval = midier::scale::interval(arpMode, scaleDegree);
   
-
   // calculate the root note of the chord of this scale degree
   const midier::Note chordRoot = scaleRoot + interval;
   //Serial.println((int)chordRoot);
@@ -177,11 +197,11 @@ void processSerialInput()
         disableArpMode();
       }
     }
-    else if(command.equals("data")){
-      //get_data();
+    else if(command.equals("nextArpMode")){
+      nextArpMode();
     }
-    else if(command.equals("reboot")){
-      //reboot();
+    else if(command.equals("nextRootNote")){
+      nextRootNote();
     }
     else{
       //Serial.println("Invalid command");
@@ -195,40 +215,52 @@ void prepareSound(int mode)
   {
     case ADSR_MODE:
     {
-      if(noteDelay.ready())
-      { 
-        byte attack_level = 255;//rand(128)+127;
-        byte decay_level = 255;//rand(255);
-        envelope.setADLevels(attack_level,decay_level);
-        envelope.setTimes(attack,decay,sustain,release_ms);
-        if (speed[0] != 0)
+      Serial.println(noteDelay.ready());
+      if((noteDelay.ready() & (speed[0] != 0)))
+      {       
+        if (arpIsOn)
         {
-          envelope.noteOn();
+          midier::Note note = nextArpNote();
+          midier::midi::Number midiNote = midier::midi::number(note, 4);
+          aOscil.setFreq((float)mtof((int)midiNote)); // (float) cast IS needed, when using the int setFreq function it rounds a bunch of notes (12, 13, 14) all to playing at 12 somehow
         }
-        
-        byte midi_note = 75 + rand(-2, 2) + map(speed[0], 0, 20, -10, 10);
-        aOscil.setFreq((int)mtof(midi_note));
+        else
+        {
+          byte midi_note = 75 + rand(-2, 2) + map(speed[0], 0, 20, -10, 10);
+          aOscil.setFreq((int)mtof(midi_note));
+        }
         float altSpeed = speed[0] + 0.1;
         if (altSpeed < 1) {altSpeed = 1;}
         attack = 5;
         decay = 200/altSpeed/altSpeed;
         sustain = 1000/altSpeed;
         release_ms = 1000/altSpeed/altSpeed;
-        noteDelay.start(map(speed[0]+2, 0, 20, 400, 40));//attack+decay+sustain+release_ms);
+        byte attack_level = 255;//rand(128)+127;
+        byte decay_level = 255;//rand(255);
+        envelope.setADLevels(attack_level,decay_level);
+        envelope.setTimes(attack,decay,sustain,release_ms);  
+        envelope.noteOn();  
+        noteDelay.start(map(speed[0]+2, 0, 20, 1000, 40));//attack+decay+sustain+release_ms);
+        
       }
+      else
+      {
+        //Serial.println("notedelay not ready or speed = zero");
+        //envelope.noteOff();//noteDelay.start(1);
+      }
+    break;
     }
     
     case BAMBOO_MODE:
     {
-      if(kTriggerDelay.ready()){
+      if(kTriggerDelay.ready() && speed[0]!=0){
         kTriggerDelay.set(map(speed[0]+2, 0, 20, 300, 30));
         float pitchChange = mapFloat(speed[0]+2.0, 0.0, 20.0, 0.8, 1.5);
         if (arpIsOn)
         {
           midier::Note note = nextArpNote();
           midier::midi::Number midiNote = midier::midi::number(note, -1);
-          Serial.println(mtof((int)midiNote));
-          aBamboo0.setFreq(mtof((int)midiNote)); // gives 12-13-15-16-18-20-23-24, but 12-13-15 all turn out as the same note. Why??
+          aBamboo0.setFreq((float)mtof((int)midiNote)); // (float) cast IS needed, when using the int setFreq function it rounds a bunch of notes (12, 13, 14) all to playing at 12 somehow
         }
         else
         {
@@ -247,13 +279,14 @@ void prepareSound(int mode)
         }
         kTriggerDelay.start();
       }
+    break;
     }
   }
 }
 
 void updateControl(){
   updateAllSpeeds();
-  speed[0] = 8;
+  //speed[0] = 8;
   processSerialInput();
   prepareSound(soundMode);
 }
