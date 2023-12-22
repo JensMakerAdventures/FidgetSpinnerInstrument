@@ -50,7 +50,7 @@ void setup(){
   }
 
   Serial.begin(9600);
-  setsoundType(SoundType::BAMBOO);
+  setsoundType(SoundType::ADSR);
   enableArpMode();
 }
 
@@ -109,7 +109,6 @@ midier::Note nextArpNote()
   
   // calculate the root note of the chord of this scale degree
   const midier::Note chordRoot = scaleRoot + interval;
-  //Serial.println((int)chordRoot);
   scaleDegree++;
 
   return chordRoot;
@@ -144,7 +143,6 @@ void updateAllSpeeds()
     updateSpeed(i);
   }
   speedCalcCount++;
-  Serial.println(speed[0]);
 }
 
 void updateSpeed(int i) // index 0-N_FIDGET_SPINNERS
@@ -174,25 +172,19 @@ void processSerialInput()
   if(Serial.available())
   {
     command = Serial.readStringUntil('\n');
-    Serial.println(command);
     if(command.startsWith("mode")){
-      Serial.println("command starts with mode");
       if(command.endsWith("0")){
-        Serial.println("command ends with 0");
         setsoundType(SoundType::ADSR);
       }
       if(command.endsWith("1")){
-        Serial.println("command ends with 1");
         setsoundType(SoundType::BAMBOO);
       }
     }
     else if(command.startsWith("arp")){
       if(command.endsWith("On")){
-        Serial.println("Arp enabled");
         enableArpMode();
       }
       if(command.endsWith("Off")){
-        Serial.println("Arp disabled");
         disableArpMode();
       }
     }
@@ -203,7 +195,6 @@ void processSerialInput()
       nextRootNote();
     }
     else{
-      //Serial.println("Invalid command");
     }
   }
 }
@@ -214,6 +205,8 @@ void prepareSound(SoundType mode)
   {
     case SoundType::ADSR:
     {
+      //Serial.println(noteDelay.ready());
+      //speed[0] = 19;
       if((noteDelay.ready() & (speed[0] != 0)))
       {       
         if (arpIsOn)
@@ -230,21 +223,15 @@ void prepareSound(SoundType mode)
         float altSpeed = speed[0] + 0.1;
         if (altSpeed < 1) {altSpeed = 1;}
         attack = 5;
-        decay = 200/altSpeed/altSpeed;
-        sustain = 1000/altSpeed;
-        release_ms = 1000/altSpeed/altSpeed;
+        decay = 200;
+        sustain = 1000;
+        release_ms = 1000;
         byte attack_level = 255;//rand(128)+127;
         byte decay_level = 255;//rand(255);
         envelope.setADLevels(attack_level,decay_level);
         envelope.setTimes(attack,decay,sustain,release_ms);  
         envelope.noteOn();  
-        noteDelay.start(map(speed[0]+2, 0, 20, 1000, 60));//attack+decay+sustain+release_ms);
-        
-      }
-      else
-      {
-        //Serial.println("notedelay not ready or speed = zero");
-        //envelope.noteOff();//noteDelay.start(1);
+        noteDelay.start(map(speed[0], 0, 20, 1000, 20));       
       }
     break;
     }
@@ -252,8 +239,8 @@ void prepareSound(SoundType mode)
     case SoundType::BAMBOO:
     {
       if(kTriggerDelay.ready() && speed[0]!=0){
-        kTriggerDelay.set(map(speed[0]+2, 0, 20, 400, 60));
-        float pitchChange = mapFloat(speed[0]+2.0, 0.0, 20.0, 0.8, 1.5);
+        kTriggerDelay.set(map(speed[0], 0, 20, 400, 30));
+        float pitchChange = mapFloat((float)speed[0], 0.0, 20.0, 0.8, 1.5);
         if (arpIsOn)
         {
           midier::Note note = nextArpNote();
@@ -293,7 +280,7 @@ AudioOutput_t updateAudio(){
   if (soundType==SoundType::ADSR)
   {
     envelope.update();
-    return MonoOutput::from16Bit((int) (envelope.next() * aOscil.next() * 2));
+    return MonoOutput::from16Bit((int) (envelope.next() * aOscil.next()));
   }
   
   else if (soundType == SoundType::BAMBOO)
