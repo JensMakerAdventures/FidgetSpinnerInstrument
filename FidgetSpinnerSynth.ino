@@ -33,12 +33,13 @@ const int ENCODER_PINS[N_FIDGET_SPINNERS] = {2,3,4,5,6,7,8,10};
 // SOFTWARE CONFIG, DON'T TOUCH
 const int CONTROL_RATE_HZ = 128; // 128 Hz, so 15.6 ms is needed to get  max fidget spinner speed correctly
 const float CONTROL_RATE_MS = 1.0/CONTROL_RATE_HZ*1000.0;
-const int SPEED_CALC_DIVIDER = 15;
+const int SPEED_CALC_DIVIDER = 25;
 const int PULSES_PER_REVOLUTION = 3;
 
-int soundMode = 0;
 bool arpIsOn;
-enum SoundMode {ADSR_MODE, BAMBOO_MODE};
+
+enum class SoundType {ADSR, BAMBOO};
+SoundType soundType;
 
 void setup(){
   startMozzi(CONTROL_RATE_HZ); // Run in 64 Hz => 15.6 ms cycle time for encoders.
@@ -49,19 +50,19 @@ void setup(){
   }
 
   Serial.begin(9600);
-  setSoundMode(ADSR_MODE);
+  setsoundType(SoundType::BAMBOO);
   enableArpMode();
 }
 
-void setSoundMode(int mode)
+void setsoundType(SoundType mode)
 {
-  if(mode == ADSR_MODE) // ADSR synth
+  if(mode == SoundType::ADSR) // ADSR synth
   {
-    soundMode = ADSR_MODE;
+    soundType = SoundType::ADSR;
   }
-  else if(mode == BAMBOO_MODE) // Bamboo samples
+  else if(mode == SoundType::BAMBOO) // Bamboo samples
   {
-    soundMode = BAMBOO_MODE;
+    soundType = SoundType::BAMBOO;
     kTriggerDelay.set(300); // countdown ms, within resolution of CONTROL_RATE 
   }
 }
@@ -129,7 +130,7 @@ long speedCalcCount;
 long count[N_FIDGET_SPINNERS];
 bool prevState[N_FIDGET_SPINNERS];
 bool state[N_FIDGET_SPINNERS];
-byte speed[N_FIDGET_SPINNERS];
+byte speed[N_FIDGET_SPINNERS]; // rotations per second of the spinner
 
 float mapFloat(float x, float in_min, float in_max, float out_min, float out_max)
 {
@@ -143,6 +144,7 @@ void updateAllSpeeds()
     updateSpeed(i);
   }
   speedCalcCount++;
+  Serial.println(speed[0]);
 }
 
 void updateSpeed(int i) // index 0-N_FIDGET_SPINNERS
@@ -163,7 +165,6 @@ void updateSpeed(int i) // index 0-N_FIDGET_SPINNERS
     if (speed[i] > 20) {speed[i] = 20;}
     speedCalcCount = 0;
     memset(count,0,sizeof(count));
-    
   }
 }
 
@@ -178,11 +179,11 @@ void processSerialInput()
       Serial.println("command starts with mode");
       if(command.endsWith("0")){
         Serial.println("command ends with 0");
-        setSoundMode(0);
+        setsoundType(SoundType::ADSR);
       }
       if(command.endsWith("1")){
         Serial.println("command ends with 1");
-        setSoundMode(1);
+        setsoundType(SoundType::BAMBOO);
       }
     }
     else if(command.startsWith("arp")){
@@ -207,11 +208,11 @@ void processSerialInput()
   }
 }
 
-void prepareSound(int mode)
+void prepareSound(SoundType mode)
 {
   switch (mode)
   {
-    case ADSR_MODE:
+    case SoundType::ADSR:
     {
       if((noteDelay.ready() & (speed[0] != 0)))
       {       
@@ -237,7 +238,7 @@ void prepareSound(int mode)
         envelope.setADLevels(attack_level,decay_level);
         envelope.setTimes(attack,decay,sustain,release_ms);  
         envelope.noteOn();  
-        noteDelay.start(map(speed[0]+2, 0, 20, 1000, 40));//attack+decay+sustain+release_ms);
+        noteDelay.start(map(speed[0]+2, 0, 20, 1000, 60));//attack+decay+sustain+release_ms);
         
       }
       else
@@ -248,10 +249,10 @@ void prepareSound(int mode)
     break;
     }
     
-    case BAMBOO_MODE:
+    case SoundType::BAMBOO:
     {
       if(kTriggerDelay.ready() && speed[0]!=0){
-        kTriggerDelay.set(map(speed[0]+2, 0, 20, 300, 30));
+        kTriggerDelay.set(map(speed[0]+2, 0, 20, 400, 60));
         float pitchChange = mapFloat(speed[0]+2.0, 0.0, 20.0, 0.8, 1.5);
         if (arpIsOn)
         {
@@ -285,17 +286,17 @@ void updateControl(){
   updateAllSpeeds();
   //speed[0] = 8;
   processSerialInput();
-  prepareSound(soundMode);
+  prepareSound(soundType);
 }
 
 AudioOutput_t updateAudio(){
-  if (soundMode==ADSR_MODE)
+  if (soundType==SoundType::ADSR)
   {
     envelope.update();
     return MonoOutput::from16Bit((int) (envelope.next() * aOscil.next() * 2));
   }
   
-  else if (soundMode == BAMBOO_MODE)
+  else if (soundType == SoundType::BAMBOO)
   {
     int asig = (int)
     ((long) aBamboo0.next()*gains.gain0)>>4;
