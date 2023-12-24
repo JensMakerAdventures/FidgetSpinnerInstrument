@@ -26,7 +26,7 @@ const int N_FIDGET_SPINNERS = 8;
 const int ENCODER_PINS[N_FIDGET_SPINNERS] = {2,3,4,5,6,7,8,10};
 const int N_POTENTIOMETERS = 4;
 const int POTENTIOMETER_PINS[N_POTENTIOMETERS] = {A0, A2, A4, A6}; // pay attention here, the order is linked to KnobFunction order!
-enum class KnobFunction {PITCH, MODE, ARPTYPE, SOUNDTYPE}; 
+enum class KnobFunction {PITCH, MODE, ARPTYPE, SOUNDTYPE, LENGTH}; 
 
 // SOFTWARE CONFIG, DON'T TOUCH
 const int CONTROL_RATE_HZ = 128; // 128 Hz, so 15.6 ms is needed to get  max fidget spinner speed correctly
@@ -35,13 +35,15 @@ const int SPEED_CALC_DIVIDER = 25;
 const int PULSES_PER_REVOLUTION = 3;
 
 // Misc.
-enum class SoundType {ADSR, BAMBOO}; 
+enum class SoundType {ADSR, BAMBOO, LENGTH}; 
 SoundType soundType; // KNOB
 //Arp
 bool arpIsOn;
 midier::Degree scaleDegree = 1; // counter for the arp
 midier::Mode arpMode = midier::Mode::Ionian; // KNOB
 midier::Note scaleRoot = midier::Note::G; // KNOB
+int prevPotVal[N_POTENTIOMETERS] = {-1, -1, -1, -1}; // Setting all to -1 makes sure in setup we encounter a change and everthing initializes OK.
+int potVal[N_POTENTIOMETERS];
 
 void setup(){
   startMozzi(CONTROL_RATE_HZ); // Run in 64 Hz => 15.6 ms cycle time for encoders.
@@ -51,9 +53,9 @@ void setup(){
     pinMode(ENCODER_PINS[i], INPUT);
   }
 
+  adcDisconnectAllDigitalIns(); // Mozzi docs says this helps power consumption and noise
   Serial.begin(9600);
-  setsoundType(SoundType::ADSR);
-  enableArpMode();
+  processPotentiometers();
 }
 
 void setsoundType(SoundType mode)
@@ -101,18 +103,22 @@ void nextRootNote()
 
 midier::Note nextArpNote()
 {
+  //Serial.println("nextArpNote() called");
   if (scaleDegree > 8)
   {
     scaleDegree = 1;
   }
+  //if(speed[scaleDegree-1] != 0)
+  //{
+    // determine the interval from the root of the scale to the chord of this scale degree
+    const midier::Interval interval = midier::scale::interval(arpMode, scaleDegree);
+    
+    // calculate the root note of the chord of this scale degree
+    const midier::Note chordRoot = scaleRoot + interval;
 
-  // determine the interval from the root of the scale to the chord of this scale degree
-  const midier::Interval interval = midier::scale::interval(arpMode, scaleDegree);
-  
-  // calculate the root note of the chord of this scale degree
-  const midier::Note chordRoot = scaleRoot + interval;
+    
+  //}
   scaleDegree++;
-
   return chordRoot;
 }
 
@@ -207,8 +213,6 @@ void prepareSound(SoundType mode)
   {
     case SoundType::ADSR:
     {
-      //Serial.println(noteDelay.ready());
-      //speed[0] = 19;
       if((noteDelay.ready() & (speed[0] != 0)))
       {       
         if (arpIsOn)
@@ -242,29 +246,23 @@ void prepareSound(SoundType mode)
     {
       if(kTriggerDelay.ready() && speed[0]!=0){
         kTriggerDelay.set(map(speed[0], 0, 20, 500, 30));
-        float pitchChange = mapFloat((float)speed[0], 0.0, 20.0, 0.8, 1.5);
+        midier::midi::Number midiNote;
         if (arpIsOn)
         {
           midier::Note note = nextArpNote();
-          midier::midi::Number midiNote = midier::midi::number(note, -1);
+          midiNote = midier::midi::number(note, -1);
           aBamboo0.setFreq((float)mtof((int)midiNote)); // (float) cast IS needed, when using the int setFreq function it rounds a bunch of notes (12, 13, 14) all to playing at 12 somehow
         }
         else
         {
+          float pitchChange = mapFloat((float)speed[0], 0.0, 20.0, 0.8, 1.5);
           aBamboo0.setFreq((float) BAMBOO_00_2048_SAMPLERATE / (float) (BAMBOO_00_2048_NUM_CELLS)*pitchChange);
         }
-        
-
-        if(speed[0]==0)
-        {
-          gains.gain0 = 0;
-        }
-        else
-        {
-          gains.gain0 = randomGain();
-          aBamboo0.start();
-        }
+        gains.gain0 = randomGain();
+        aBamboo0.start();
         kTriggerDelay.start();
+        Serial.println("Note started");
+        Serial.println( (int) midiNote);
       }
     break;
     }
@@ -277,40 +275,52 @@ void handlePotValChange(int pot)
   {
     case KnobFunction::PITCH:
     {
+      scaleRoot = midier::Note::C;
+      int semiTonesToAdd = map(potVal[pot], 0, 31, 0, 12);
+      scaleRoot = (midier::Note)((int)scaleRoot + semiTonesToAdd);
       break;
     }
     case KnobFunction::MODE:
     {
+      arpMode = (midier::Mode) 0;
+      int arpModeStepsToAdd = map(potVal[pot], 0, 31, 0, (int)midier::Mode::Count);
+      arpMode = (midier::Mode)((int)arpMode + arpModeStepsToAdd);
       break;
     }
     case KnobFunction::ARPTYPE:
     {
+      if(potVal[pot] > 15) {arpIsOn = true;}
+      else {arpIsOn = false;}
+      break;
+    }
+
+    case KnobFunction::SOUNDTYPE:
+    {
+      soundType = (SoundType)map(potVal[pot], 0, 15, 0, (int)SoundType::LENGTH-1);
       break;
     }
   }
 }
 
-int prevPotVal[N_POTENTIOMETERS];
-int potVal[N_POTENTIOMETERS];
 void processPotentiometers()
 {
   for(int i = 0; i < N_POTENTIOMETERS; i++)
   {
-    potVal[i] = analogRead(POTENTIOMETER_PINS[i]);
+    potVal[i] = mozziAnalogRead(POTENTIOMETER_PINS[i])>>5; // trade off precision for noise reduction. Still this gives problems with noise, find better solution!
     if(potVal[i] != prevPotVal[i])
     {
       handlePotValChange(i);
     }
     prevPotVal[i] = potVal[i];
   }
-  
-
 }
 
 void updateControl(){
   updateAllSpeeds();
-  //speed[0] = 8;
-  processPotentiometers();
+  speed[0] = 8;
+  soundType == SoundType::BAMBOO;
+  arpIsOn = true;
+  //processPotentiometers();
   processSerialInput();
   prepareSound(soundType);
 }
