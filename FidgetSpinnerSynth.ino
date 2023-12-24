@@ -44,6 +44,12 @@ midier::Mode arpMode = midier::Mode::Ionian; // KNOB
 midier::Note scaleRoot = midier::Note::G; // KNOB
 int prevPotVal[N_POTENTIOMETERS] = {-1, -1, -1, -1}; // Setting all to -1 makes sure in setup we encounter a change and everthing initializes OK.
 int potVal[N_POTENTIOMETERS];
+long speedCalcCount;
+long counts[N_FIDGET_SPINNERS];
+bool prevState[N_FIDGET_SPINNERS];
+bool state[N_FIDGET_SPINNERS];
+byte speed[N_FIDGET_SPINNERS]; // rotations per second of the spinner
+int summedSpeed = 0;
 
 void setup(){
   startMozzi(CONTROL_RATE_HZ); // Run in 64 Hz => 15.6 ms cycle time for encoders.
@@ -102,23 +108,24 @@ void nextRootNote()
 
 midier::Note nextArpNote()
 {
-  //Serial.println("nextArpNote() called");
-  if (scaleDegree > 8)
+  for(int i = 0; i < 8; i++)
   {
-    scaleDegree = 1;
+    if (scaleDegree > 8)
+    {
+      scaleDegree = 1;
+    }
+    if(speed[scaleDegree-1] != 0)
+    {
+        // determine the interval from the root of the scale to the chord of this scale degree
+      const midier::Interval interval = midier::scale::interval(arpMode, scaleDegree);
+      
+      // calculate the root note of the chord of this scale degree
+      const midier::Note chordRoot = scaleRoot + interval;
+      scaleDegree++;
+      return chordRoot;
+    }  
+    scaleDegree++;
   }
-  //if(speed[scaleDegree-1] != 0)
-  //{
-    // determine the interval from the root of the scale to the chord of this scale degree
-    const midier::Interval interval = midier::scale::interval(arpMode, scaleDegree);
-    
-    // calculate the root note of the chord of this scale degree
-    const midier::Note chordRoot = scaleRoot + interval;
-
-    
-  //}
-  scaleDegree++;
-  return chordRoot;
 }
 
 
@@ -132,12 +139,6 @@ struct gainstruct{
 }
 gains;
 
-long speedCalcCount;
-long count[N_FIDGET_SPINNERS];
-bool prevState[N_FIDGET_SPINNERS];
-bool state[N_FIDGET_SPINNERS];
-byte speed[N_FIDGET_SPINNERS]; // rotations per second of the spinner
-
 float mapFloat(float x, float in_min, float in_max, float out_min, float out_max)
 {
   return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
@@ -147,30 +148,34 @@ void updateAllSpeeds()
 {
   for(int i = 0; i < N_FIDGET_SPINNERS; i++)
   {
-    updateSpeed(i);
+    updateEncoderCounts(i);
   }
+
   speedCalcCount++;
+  
+  // Calculate the speed averaging the pulses made over the last cycles
+  if(speedCalcCount == SPEED_CALC_DIVIDER)
+  {
+    for(int i = 0; i < N_FIDGET_SPINNERS; i++)
+    {
+      speed[i] = byte((float)counts[i] / (float)PULSES_PER_REVOLUTION / ((float)SPEED_CALC_DIVIDER*((float)CONTROL_RATE_MS/1000.0)));
+      if (speed[i] > 20) {speed[i] = 20;}
+    }
+    memset(counts,0,sizeof(counts)); // set all counts back to zero
+    speedCalcCount = 0;
+  }
 }
 
-void updateSpeed(int i) // index 0-N_FIDGET_SPINNERS
+void updateEncoderCounts(int i) // index 0-N_FIDGET_SPINNERS
 {
   if ((i<0) | (i > N_FIDGET_SPINNERS - 1)) {return;}
 
   state[i] = digitalRead(ENCODER_PINS[i]);
   if (state[i] != prevState[i])
   {
-    count[i]++;
+    counts[i]++;
   }
   prevState[i] = state[i];
-  
-  // Calculate the speed averating the pulses made over the last cycles
-  if(speedCalcCount == SPEED_CALC_DIVIDER)
-  {
-    speed[i] = byte((float)count[i] / (float)PULSES_PER_REVOLUTION / ((float)SPEED_CALC_DIVIDER*((float)CONTROL_RATE_MS/1000.0)));
-    if (speed[i] > 20) {speed[i] = 20;}
-    speedCalcCount = 0;
-    memset(count,0,sizeof(count));
-  }
 }
 
 void processSerialInput()
@@ -206,13 +211,59 @@ void processSerialInput()
   }
 }
 
+bool anySpinnerIsTurning()
+{
+  for (int i = 0; i < N_FIDGET_SPINNERS; i++)
+  {
+    if (speed[i] != 0) {return true;}
+  }
+  return false;
+}
+
+byte calcSummedSpeed()
+{
+  int sum = 0;
+  byte nonZeroEntries = 0;
+  for (int i = 0; i < N_FIDGET_SPINNERS; i++)
+  {
+    if (speed[i]!=0)
+    {
+      sum = sum + speed[i];
+      if (speed[i] > 4)
+      {
+        nonZeroEntries++;
+      }
+    }
+  }
+
+  if (sum > 20)
+  {
+    sum = 20;
+  }
+  if(nonZeroEntries != 0)
+   {
+    sum = sum / nonZeroEntries;
+  }
+  else
+  {
+    sum = 0;
+  }
+  return sum;  
+}
+
 void prepareSound(SoundType mode)
 {
+  summedSpeed = calcSummedSpeed();
+  if (summedSpeed == 0)
+  {
+    return;
+  }
+
   switch (mode)
   {
     case SoundType::ADSR:
     {
-      if((noteDelay.ready() & (speed[0] != 0)))
+      if((noteDelay.ready()))
       {       
         if (arpIsOn)
         {
@@ -222,41 +273,37 @@ void prepareSound(SoundType mode)
         }
         else
         {
-          byte midi_note = 75 + rand(-2, 2) + map(speed[0], 0, 20, -10, 10);
+          byte midi_note = 75 + rand(-2, 2) + map(summedSpeed, 0, 20, -10, 10);
           aOscil.setFreq((int)mtof(midi_note));
         }
-        float altSpeed = speed[0] + 0.1;
-        if (altSpeed < 1) {altSpeed = 1;}
         attack = 5;
-        decay = 200;
-        sustain = 1000;
-        release_ms = 1000;
-        byte attack_level = 255;//rand(128)+127;
-        byte decay_level = 255;//rand(255);
+        decay = 50;
+        sustain = 50;
+        release_ms = 50;
+        byte attack_level = 255;
+        byte decay_level = 255;
         envelope.setADLevels(attack_level,decay_level);
         envelope.setTimes(attack,decay,sustain,release_ms);  
         envelope.noteOn();  
-        noteDelay.start(map(speed[0], 0, 20, 350, 30));       
+        noteDelay.start(map(summedSpeed, 0, 20, 350, 30));       
       }
     break;
     }
     
     case SoundType::BAMBOO:
     {
-      if(kTriggerDelay.ready() && speed[0]!=0){
-        kTriggerDelay.set(map(speed[0], 0, 20, 500, 30));
+      if(kTriggerDelay.ready()){
+        kTriggerDelay.set(map(summedSpeed, 0, 20, 500, 30));
         midier::midi::Number midiNote;
         if (arpIsOn)
         {
           midier::Note note = nextArpNote();
           midiNote = midier::midi::number(note, 2); // prescale 2 octaves up, mtof makes mistakes in lower ranges
-          Serial.println((int) midiNote);
-          Serial.println((float)mtof((int)midiNote));
           aBamboo0.setFreq((float)mtof((int)midiNote)/8); // (float) cast IS needed, when using the int setFreq function it rounds a bunch of notes (12, 13, 14) all to playing at 12 somehow. scale down earlier scale up
         }
         else
         {
-          float pitchChange = mapFloat((float)speed[0], 0.0, 20.0, 0.8, 1.5);
+          float pitchChange = mapFloat((float)summedSpeed, 0.0, 20.0, 0.8, 1.5);
           aBamboo0.setFreq((float) BAMBOO_00_2048_SAMPLERATE / (float) (BAMBOO_00_2048_NUM_CELLS)*pitchChange);
         }
         gains.gain0 = randomGain();
@@ -317,9 +364,11 @@ void processPotentiometers()
 void updateControl()
 {
   updateAllSpeeds();
+  //speed[1] = 8;
   processPotentiometers();
   processSerialInput();
   prepareSound(soundType);
+
 }
 
 AudioOutput_t updateAudio()
@@ -327,7 +376,7 @@ AudioOutput_t updateAudio()
   if (soundType==SoundType::ADSR)
   {
     envelope.update();
-    return MonoOutput::from16Bit((int) (envelope.next() * aOscil.next()));
+    return MonoOutput::from16Bit((int) ((float)envelope.next() * 1.01 * aOscil.next()));
   }
   
   else if (soundType == SoundType::BAMBOO)
