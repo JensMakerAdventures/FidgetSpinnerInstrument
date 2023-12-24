@@ -316,9 +316,9 @@ void processPotentiometers()
 }
 
 void updateControl(){
-  updateAllSpeeds();
+  //updateAllSpeeds();
   speed[0] = 8;
-  soundType == SoundType::BAMBOO;
+  soundType = SoundType::BAMBOO;
   arpIsOn = true;
   //processPotentiometers();
   processSerialInput();
