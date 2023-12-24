@@ -47,7 +47,6 @@ int potVal[N_POTENTIOMETERS];
 
 void setup(){
   startMozzi(CONTROL_RATE_HZ); // Run in 64 Hz => 15.6 ms cycle time for encoders.
-  aBamboo0.setFreq((float) BAMBOO_00_2048_SAMPLERATE / (float) (BAMBOO_00_2048_NUM_CELLS*1.0)); // play at the speed it was recorded at
   for(int i = 0; i < N_FIDGET_SPINNERS; i++)
   {
     pinMode(ENCODER_PINS[i], INPUT);
@@ -250,8 +249,10 @@ void prepareSound(SoundType mode)
         if (arpIsOn)
         {
           midier::Note note = nextArpNote();
-          midiNote = midier::midi::number(note, -1);
-          aBamboo0.setFreq((float)mtof((int)midiNote)); // (float) cast IS needed, when using the int setFreq function it rounds a bunch of notes (12, 13, 14) all to playing at 12 somehow
+          midiNote = midier::midi::number(note, 2); // prescale 2 octaves up, mtof makes mistakes in lower ranges
+          Serial.println((int) midiNote);
+          Serial.println((float)mtof((int)midiNote));
+          aBamboo0.setFreq((float)mtof((int)midiNote)/8); // (float) cast IS needed, when using the int setFreq function it rounds a bunch of notes (12, 13, 14) all to playing at 12 somehow. scale down earlier scale up
         }
         else
         {
@@ -261,8 +262,6 @@ void prepareSound(SoundType mode)
         gains.gain0 = randomGain();
         aBamboo0.start();
         kTriggerDelay.start();
-        Serial.println("Note started");
-        Serial.println( (int) midiNote);
       }
     break;
     }
@@ -315,17 +314,16 @@ void processPotentiometers()
   }
 }
 
-void updateControl(){
-  //updateAllSpeeds();
-  speed[0] = 8;
-  soundType = SoundType::BAMBOO;
-  arpIsOn = true;
-  //processPotentiometers();
+void updateControl()
+{
+  updateAllSpeeds();
+  processPotentiometers();
   processSerialInput();
   prepareSound(soundType);
 }
 
-AudioOutput_t updateAudio(){
+AudioOutput_t updateAudio()
+{
   if (soundType==SoundType::ADSR)
   {
     envelope.update();
