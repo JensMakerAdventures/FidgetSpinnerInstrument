@@ -21,14 +21,12 @@ unsigned int duration, attack, decay, sustain, release_ms;
 Sample <BAMBOO_00_2048_NUM_CELLS, AUDIO_RATE>aBamboo0(BAMBOO_00_2048_DATA); // use: Sample <table_size, update_rate> SampleName (wavetable)
 EventDelay kTriggerDelay; // for scheduling audio gain changes
 
-// Arp
-midier::Degree scaleDegree = 1; // counter for the arp
-midier::Mode arpMode = midier::Mode::Ionian;
-midier::Note scaleRoot = midier::Note::G;
-
 // HARDWARE CONFIG
 const int N_FIDGET_SPINNERS = 8;
 const int ENCODER_PINS[N_FIDGET_SPINNERS] = {2,3,4,5,6,7,8,10};
+const int N_POTENTIOMETERS = 4;
+const int POTENTIOMETER_PINS[N_POTENTIOMETERS] = {A0, A2, A4, A6}; // pay attention here, the order is linked to KnobFunction order!
+enum class KnobFunction {PITCH, MODE, ARPTYPE, SOUNDTYPE}; 
 
 // SOFTWARE CONFIG, DON'T TOUCH
 const int CONTROL_RATE_HZ = 128; // 128 Hz, so 15.6 ms is needed to get  max fidget spinner speed correctly
@@ -36,10 +34,14 @@ const float CONTROL_RATE_MS = 1.0/CONTROL_RATE_HZ*1000.0;
 const int SPEED_CALC_DIVIDER = 25;
 const int PULSES_PER_REVOLUTION = 3;
 
+// Misc.
+enum class SoundType {ADSR, BAMBOO}; 
+SoundType soundType; // KNOB
+//Arp
 bool arpIsOn;
-
-enum class SoundType {ADSR, BAMBOO};
-SoundType soundType;
+midier::Degree scaleDegree = 1; // counter for the arp
+midier::Mode arpMode = midier::Mode::Ionian; // KNOB
+midier::Note scaleRoot = midier::Note::G; // KNOB
 
 void setup(){
   startMozzi(CONTROL_RATE_HZ); // Run in 64 Hz => 15.6 ms cycle time for encoders.
@@ -231,7 +233,7 @@ void prepareSound(SoundType mode)
         envelope.setADLevels(attack_level,decay_level);
         envelope.setTimes(attack,decay,sustain,release_ms);  
         envelope.noteOn();  
-        noteDelay.start(map(speed[0], 0, 20, 1000, 20));       
+        noteDelay.start(map(speed[0], 0, 20, 350, 30));       
       }
     break;
     }
@@ -239,7 +241,7 @@ void prepareSound(SoundType mode)
     case SoundType::BAMBOO:
     {
       if(kTriggerDelay.ready() && speed[0]!=0){
-        kTriggerDelay.set(map(speed[0], 0, 20, 400, 30));
+        kTriggerDelay.set(map(speed[0], 0, 20, 500, 30));
         float pitchChange = mapFloat((float)speed[0], 0.0, 20.0, 0.8, 1.5);
         if (arpIsOn)
         {
@@ -269,9 +271,46 @@ void prepareSound(SoundType mode)
   }
 }
 
+void handlePotValChange(int pot)
+{
+  switch((KnobFunction)pot)
+  {
+    case KnobFunction::PITCH:
+    {
+      break;
+    }
+    case KnobFunction::MODE:
+    {
+      break;
+    }
+    case KnobFunction::ARPTYPE:
+    {
+      break;
+    }
+  }
+}
+
+int prevPotVal[N_POTENTIOMETERS];
+int potVal[N_POTENTIOMETERS];
+void processPotentiometers()
+{
+  for(int i = 0; i < N_POTENTIOMETERS; i++)
+  {
+    potVal[i] = analogRead(POTENTIOMETER_PINS[i]);
+    if(potVal[i] != prevPotVal[i])
+    {
+      handlePotValChange(i);
+    }
+    prevPotVal[i] = potVal[i];
+  }
+  
+
+}
+
 void updateControl(){
   updateAllSpeeds();
   //speed[0] = 8;
+  processPotentiometers();
   processSerialInput();
   prepareSound(soundType);
 }
