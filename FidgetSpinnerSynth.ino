@@ -26,7 +26,7 @@ const int N_FIDGET_SPINNERS = 8;
 const int ENCODER_PINS[N_FIDGET_SPINNERS] = {2,3,4,5,6,7,8,10};
 const int N_POTENTIOMETERS = 6;
 const int POTENTIOMETER_PINS[N_POTENTIOMETERS] = {A0, A1, A2, A4, A6, A7}; // pay attention here, the order is linked to KnobFunction order!
-enum class KnobFunction {PITCH, TEMPO, MODE, ARPTYPE, SOUNDTYPE, NOTESPEED, LENGTH}; 
+enum class KnobFunction {PITCH, TEMPO, MODE, ARPTYPE, SOUNDTYPE, RHYTHM, LENGTH}; 
 
 // SOFTWARE CONFIG, DON'T TOUCH
 const int CONTROL_RATE_HZ = 128; // 128 Hz, so 15.6 ms is needed to get  max fidget spinner speed correctly
@@ -388,7 +388,7 @@ void handlePotValChange(int pot)
       break;
     }
 
-    case KnobFunction::NOTESPEED:
+    case KnobFunction::RHYTHM:
     {
       if(potVal[pot] < 8)
       {
