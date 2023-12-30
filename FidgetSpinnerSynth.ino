@@ -24,15 +24,19 @@ EventDelay kTriggerDelay; // for scheduling audio gain changes
 // HARDWARE CONFIG
 const int N_FIDGET_SPINNERS = 8;
 const int ENCODER_PINS[N_FIDGET_SPINNERS] = {2,3,4,5,6,7,8,10};
-const int N_POTENTIOMETERS = 4;
-const int POTENTIOMETER_PINS[N_POTENTIOMETERS] = {A0, A2, A4, A6}; // pay attention here, the order is linked to KnobFunction order!
-enum class KnobFunction {PITCH, MODE, ARPTYPE, SOUNDTYPE, LENGTH}; 
+const int N_POTENTIOMETERS = 6;
+const int POTENTIOMETER_PINS[N_POTENTIOMETERS] = {A0, A1, A2, A4, A6, A7}; // pay attention here, the order is linked to KnobFunction order!
+enum class KnobFunction {PITCH, TEMPO, MODE, ARPTYPE, SOUNDTYPE, NOTESPEED, LENGTH}; 
 
 // SOFTWARE CONFIG, DON'T TOUCH
 const int CONTROL_RATE_HZ = 128; // 128 Hz, so 15.6 ms is needed to get  max fidget spinner speed correctly
 const float CONTROL_RATE_MS = 1.0/CONTROL_RATE_HZ*1000.0;
 const int SPEED_CALC_DIVIDER = 25;
 const int PULSES_PER_REVOLUTION = 3;
+const int lowBPM = 60;
+const int highBPM = 180;
+const int lowBPMdelay = 60000 / lowBPM; // [ms] for quarter notes
+const int highBPMdelay = 60000 / highBPM; // [ms] for quarter notes
 
 // Misc.
 enum class SoundType {ADSR, BAMBOO, LENGTH}; 
@@ -42,6 +46,9 @@ bool arpIsOn;
 midier::Degree scaleDegree = 1; // counter for the arp
 midier::Mode arpMode = midier::Mode::Ionian; // KNOB
 midier::Note scaleRoot = midier::Note::G; // KNOB
+int noteTime = 100; // [ms] KNOB calculated from knobs tempo and notespeed if constant note time is enabled
+int tempo = 120; // KNOB [BPM]
+int noteSpeedMultiplier = 1; // 1/4th (1) 1/8th (2) 1/16th (4) 1/32th (8) notes multiplication factor
 int prevPotVal[N_POTENTIOMETERS] = {-1, -1, -1, -1}; // Setting all to -1 makes sure in setup we encounter a change and everthing initializes OK.
 int potVal[N_POTENTIOMETERS];
 long speedCalcCount;
@@ -49,7 +56,7 @@ long counts[N_FIDGET_SPINNERS];
 bool prevState[N_FIDGET_SPINNERS];
 bool state[N_FIDGET_SPINNERS];
 byte speed[N_FIDGET_SPINNERS]; // rotations per second of the spinner
-int summedSpeed = 0;
+int variableArpSpeed = 0;
 
 void setup(){
   startMozzi(CONTROL_RATE_HZ); // Run in 64 Hz => 15.6 ms cycle time for encoders.
@@ -220,7 +227,7 @@ bool anySpinnerIsTurning()
   return false;
 }
 
-byte calcSummedSpeed()
+byte calcVariableArpSpeed()
 {
   int sum = 0;
   byte nonZeroEntries = 0;
@@ -229,7 +236,7 @@ byte calcSummedSpeed()
     if (speed[i]!=0)
     {
       sum = sum + speed[i];
-      if (speed[i] > 4)
+      if (speed[i] != 0)
       {
         nonZeroEntries++;
       }
@@ -242,7 +249,7 @@ byte calcSummedSpeed()
   }
   if(nonZeroEntries != 0)
    {
-    sum = sum / nonZeroEntries;
+    sum = sum / nonZeroEntries + 2*nonZeroEntries;
   }
   else
   {
@@ -253,8 +260,8 @@ byte calcSummedSpeed()
 
 void prepareSound(SoundType mode)
 {
-  summedSpeed = calcSummedSpeed();
-  if (summedSpeed == 0)
+  variableArpSpeed = calcVariableArpSpeed();
+  if (variableArpSpeed == 0)
   {
     return;
   }
@@ -273,7 +280,7 @@ void prepareSound(SoundType mode)
         }
         else
         {
-          byte midi_note = 75 + rand(-2, 2) + map(summedSpeed, 0, 20, -10, 10);
+          byte midi_note = 75 + rand(-2, 2) + map(variableArpSpeed, 0, 20, -10, 10);
           aOscil.setFreq((int)mtof(midi_note));
         }
         attack = 5;
@@ -284,8 +291,16 @@ void prepareSound(SoundType mode)
         byte decay_level = 255;
         envelope.setADLevels(attack_level,decay_level);
         envelope.setTimes(attack,decay,sustain,release_ms);  
-        envelope.noteOn();  
-        noteDelay.start(map(summedSpeed, 0, 20, 350, 30));       
+        envelope.noteOn();
+        if(arpIsOn)
+        {
+          noteDelay.start(noteTime);
+        }
+        else
+        {
+          noteDelay.start(map(variableArpSpeed, 0, 20, 350, 30));
+        }
+        
       }
     break;
     }
@@ -293,7 +308,15 @@ void prepareSound(SoundType mode)
     case SoundType::BAMBOO:
     {
       if(kTriggerDelay.ready()){
-        kTriggerDelay.set(map(summedSpeed, 0, 20, 500, 30));
+        if(arpIsOn)
+        {
+          kTriggerDelay.set(noteTime);
+        }
+        else
+        {
+          kTriggerDelay.set(map(variableArpSpeed, 0, 20, 500, 30));
+        }
+        
         midier::midi::Number midiNote;
         if (arpIsOn)
         {
@@ -303,7 +326,7 @@ void prepareSound(SoundType mode)
         }
         else
         {
-          float pitchChange = mapFloat((float)summedSpeed, 0.0, 20.0, 0.8, 1.5);
+          float pitchChange = mapFloat((float)variableArpSpeed, 0.0, 20.0, 0.8, 1.5);
           aBamboo0.setFreq((float) BAMBOO_00_2048_SAMPLERATE / (float) (BAMBOO_00_2048_NUM_CELLS)*pitchChange);
         }
         gains.gain0 = randomGain();
@@ -313,6 +336,11 @@ void prepareSound(SoundType mode)
     break;
     }
   }
+}
+
+void setNewArpTime()
+{
+  noteTime = map(tempo, lowBPM, highBPM, lowBPMdelay, highBPMdelay) / noteSpeedMultiplier;
 }
 
 void handlePotValChange(int pot)
@@ -335,14 +363,57 @@ void handlePotValChange(int pot)
     }
     case KnobFunction::ARPTYPE:
     {
-      if(potVal[pot] > 15) {arpIsOn = true;}
-      else {arpIsOn = false;}
+      if(potVal[pot] > 15) 
+      {
+        arpIsOn = true;
+      }  
+      else 
+      {
+        arpIsOn = false;
+      }
       break;
     }
 
     case KnobFunction::SOUNDTYPE:
     {
       soundType = (SoundType)map(potVal[pot], 0, 15, 0, (int)SoundType::LENGTH-1);
+      break;
+    }
+
+    case KnobFunction::TEMPO:
+    {
+      Serial.println(potVal[pot]);
+      tempo = map(potVal[pot], 0, 31, lowBPM, highBPM);
+      setNewArpTime();
+      break;
+    }
+
+    case KnobFunction::NOTESPEED:
+    {
+      if(potVal[pot] < 8)
+      {
+        noteSpeedMultiplier = 1; // quarter notes
+        setNewArpTime();
+        break;
+      }
+      if(potVal[pot] < 16)
+      {
+        noteSpeedMultiplier = 2; // eight notes
+        setNewArpTime();
+        break;
+      }
+      if(potVal[pot] < 24)
+      {
+        noteSpeedMultiplier = 4; // 1/16th notes
+        setNewArpTime();
+        break;
+      }
+      else
+      {
+        noteSpeedMultiplier = 8; // 1/32th notes
+        setNewArpTime();
+        break;
+      }
       break;
     }
   }
@@ -376,7 +447,7 @@ AudioOutput_t updateAudio()
   if (soundType==SoundType::ADSR)
   {
     envelope.update();
-    return MonoOutput::from16Bit((int) ((float)envelope.next() * 1.01 * aOscil.next()));
+    return MonoOutput::from16Bit((int) (envelope.next() * aOscil.next()));
   }
   
   else if (soundType == SoundType::BAMBOO)
