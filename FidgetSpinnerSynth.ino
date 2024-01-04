@@ -5,22 +5,6 @@
 #include <mozzi_midi.h>
 #include <Midier.h>
 
-// ADSR synth (type 0)
-#include <Oscil.h>
-#include <ADSR.h>
-#include <tables/sin8192_int8.h>
-Oscil <8192, AUDIO_RATE> aOscil(SIN8192_DATA);;
-EventDelay noteDelay; // for triggering the envelope
-ADSR <AUDIO_RATE, AUDIO_RATE> envelope;
-boolean note_is_on = true;
-unsigned int duration, attack, decay, sustain, release_ms;
-
-// Bamboo sound sampler (type 1)
-#include <Sample.h> // Sample template
-#include <samples/bamboo/bamboo_00_2048_int8.h> // wavetable data
-Sample <BAMBOO_00_2048_NUM_CELLS, AUDIO_RATE>aBamboo0(BAMBOO_00_2048_DATA); // use: Sample <table_size, update_rate> SampleName (wavetable)
-EventDelay kTriggerDelay; // for scheduling audio gain changes
-
 // HARDWARE CONFIG
 const int N_FIDGET_SPINNERS = 8;
 const int ENCODER_PINS[N_FIDGET_SPINNERS] = {2,3,4,5,6,7,8,10};
