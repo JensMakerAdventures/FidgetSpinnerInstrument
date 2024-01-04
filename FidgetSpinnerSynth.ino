@@ -21,16 +21,20 @@ const int lowBPM = 60;
 const int highBPM = 180;
 const int lowBPMdelay = 60000 / lowBPM; // [ms] for quarter notes
 const int highBPMdelay = 60000 / highBPM; // [ms] for quarter notes
+const int potScaleDown = 5;
+const int potValueMax = 1023 >> potScaleDown;
 
-// ADSR synth
+// Wavetable synth
 #include <Oscil.h>
 #include <ADSR.h>
-#include <tables/sin8192_int8.h>
-Oscil <8192, AUDIO_RATE> aOscil(SIN8192_DATA);;
+#include <tables/sin512_int8.h>
+#include <tables/saw_analogue512_int8.h>
+#include <tables/square_analogue512_int8.h>
+
+Oscil <512, AUDIO_RATE> aOscil;
 EventDelay noteDelay; // for triggering the envelope
 ADSR <AUDIO_RATE, AUDIO_RATE> envelope;
-boolean note_is_on = true;
-unsigned int duration, attack, decay, sustain, release_ms;
+unsigned int attack, decay, sustain, release_ms;
 
 // Bamboo sound sampler
 #include <Sample.h> // Sample template
@@ -39,7 +43,7 @@ Sample <BAMBOO_00_2048_NUM_CELLS, AUDIO_RATE>aBamboo0(BAMBOO_00_2048_DATA); // u
 EventDelay kTriggerDelay; // for scheduling audio gain changes
 
 // Misc.
-enum class SoundType {ADSR, BAMBOO, SQUARE, LENGTH}; 
+enum class SoundType {SINE, SAW, SQUARE, BAMBOO, LENGTH}; 
 SoundType soundType; // KNOB
 
 //Arp
@@ -183,45 +187,45 @@ void prepareSound(SoundType mode)
     return;
   }
 
-  switch (mode)
+  if (mode==SoundType::SINE | mode==SoundType::SQUARE | mode==SoundType::SAW)
   {
-    case SoundType::ADSR:
-    {
-      if((noteDelay.ready()))
-      {       
-        if (arpIsOn)
-        {
-          midier::Note note = nextArpNote();
-          midier::midi::Number midiNote = midier::midi::number(note, 4);
-          aOscil.setFreq((float)mtof((int)midiNote)); // (float) cast IS needed, when using the int setFreq function it rounds a bunch of notes (12, 13, 14) all to playing at 12 somehow
-        }
-        else
-        {
-          byte midi_note = 75 + rand(-2, 2) + map(variableArpSpeed, 0, 20, -10, 10);
-          aOscil.setFreq((int)mtof(midi_note));
-        }
-        attack = 5;
-        decay = 50;
-        sustain = 50;
-        release_ms = 50;
-        byte attack_level = 255;
-        byte decay_level = 255;
-        envelope.setADLevels(attack_level,decay_level);
-        envelope.setTimes(attack,decay,sustain,release_ms);  
-        envelope.noteOn();
-        if(arpIsOn)
-        {
-          noteDelay.start(noteTime);
-        }
-        else
-        {
-          noteDelay.start(map(variableArpSpeed, 0, 20, 350, 30));
-        }
-        
+    if((noteDelay.ready()))
+    {       
+      if (arpIsOn)
+      {
+        midier::Note note = nextArpNote();
+        midier::midi::Number midiNote = midier::midi::number(note, 4); //octave 4 seems good
+        aOscil.setFreq((float)mtof((int)midiNote)); // (float) cast IS needed, when using the int setFreq function it rounds a bunch of notes (12, 13, 14) all to playing at 12 somehow
       }
-    break;
+      else
+      {
+        byte midi_note = 75 + rand(-2, 2) + map(variableArpSpeed, 0, 20, -10, 10);
+        aOscil.setFreq((int)mtof(midi_note));
+      }
+      attack = 5;
+      decay = 50;
+      sustain = 50;
+      release_ms = noteTime - 30 - attack - decay-sustain; // 30 ms of transition time
+      //release_ms = 50;
+      byte attack_level = 255;
+      byte decay_level = 255;
+      envelope.setADLevels(attack_level,decay_level);
+      envelope.setTimes(attack,decay,sustain,release_ms);  
+      envelope.noteOn();
+      if(arpIsOn)
+      {
+        noteDelay.start(noteTime);
+      }
+      else
+      {
+        noteDelay.start(map(variableArpSpeed, 0, 20, 350, 30));
+      }
     }
-    
+    return;
+  }
+
+  switch (mode)
+  {  
     case SoundType::BAMBOO:
     {
       if(kTriggerDelay.ready()){
@@ -238,7 +242,7 @@ void prepareSound(SoundType mode)
         if (arpIsOn)
         {
           midier::Note note = nextArpNote();
-          midiNote = midier::midi::number(note, 2); // prescale 2 octaves up, mtof makes mistakes in lower ranges
+          midiNote = midier::midi::number(note, 2) + 6; // prescale 2 octaves up, mtof makes mistakes in lower ranges. Offset 5 necessary to be in tune with synths.
           aBamboo0.setFreq((float)mtof((int)midiNote)/8); // (float) cast IS needed, when using the int setFreq function it rounds a bunch of notes (12, 13, 14) all to playing at 12 somehow. scale down earlier scale up
         }
         else
@@ -253,8 +257,9 @@ void prepareSound(SoundType mode)
       break;
     }
 
-    case SoundType::SQUARE:
+    default:
     {
+      Serial.println("Error: wrong soundtype.");
       break;
     }
   }
@@ -272,14 +277,14 @@ void handlePotValChange(int pot)
     case KnobFunction::PITCH:
     {
       scaleRoot = midier::Note::C;
-      int semiTonesToAdd = map(potVal[pot], 0, 31, 0, 12);
+      int semiTonesToAdd = map(potVal[pot], 0, 32, 0, 12);
       scaleRoot = (midier::Note)((int)scaleRoot + semiTonesToAdd);
       break;
     }
     case KnobFunction::MODE:
     {
       arpMode = (midier::Mode) 0;
-      int arpModeStepsToAdd = map(potVal[pot], 0, 31, 0, (int)midier::Mode::Count);
+      int arpModeStepsToAdd = map(potVal[pot], 0, potValueMax+1, 0, (int)midier::Mode::Count);
       arpMode = (midier::Mode)((int)arpMode + arpModeStepsToAdd);
       break;
     }
@@ -298,13 +303,31 @@ void handlePotValChange(int pot)
 
     case KnobFunction::SOUNDTYPE:
     {
-      soundType = (SoundType)map(potVal[pot], 0, 15, 0, (int)SoundType::LENGTH-1);
+      soundType = (SoundType)map(potVal[pot], 0, potValueMax+1, 0, (int)SoundType::LENGTH); 
+      switch (soundType)
+      {
+        case SoundType::SAW:
+        {
+          aOscil.setTable(SAW_ANALOGUE512_DATA);
+          break;
+        }
+        case SoundType::SQUARE:
+        {
+          aOscil.setTable(SQUARE_ANALOGUE512_DATA);
+          break;
+        }
+        case SoundType::SINE:
+        {
+          aOscil.setTable(SIN512_DATA);
+          break;
+        }
+      }
       break;
     }
 
     case KnobFunction::TEMPO:
     {
-      tempo = map(potVal[pot], 0, 31, lowBPM, highBPM);
+      tempo = map(potVal[pot], 0, potValueMax+1, lowBPM, highBPM);
       setNewArpTime();
       break;
     }
@@ -344,7 +367,7 @@ void processPotentiometers()
 {
   for(int i = 0; i < N_POTENTIOMETERS; i++)
   {
-    potVal[i] = mozziAnalogRead(POTENTIOMETER_PINS[i])>>5; // trade off precision for noise reduction. Still this gives problems with noise, find better solution!
+    potVal[i] = mozziAnalogRead(POTENTIOMETER_PINS[i])>>potScaleDown; // trade off precision for noise reduction. Still this gives problems with noise, find better solution!
     if(potVal[i] != prevPotVal[i])
     {
       handlePotValChange(i);
@@ -363,14 +386,15 @@ void updateControl()
 
 AudioOutput_t updateAudio()
 {
+  if(soundType==SoundType::SINE | soundType==SoundType::SQUARE | soundType==SoundType::SAW)
+  {
+    envelope.update();
+    return MonoOutput::from16Bit((int) (envelope.next() * aOscil.next()));
+    return;
+  }
   switch(soundType)
   {
-    case SoundType::ADSR:
-    {
-      envelope.update();
-      return MonoOutput::from16Bit((int) (envelope.next() * aOscil.next()));
-      break;
-    }
+
     case SoundType::BAMBOO:
     {
       int asig = (int)
