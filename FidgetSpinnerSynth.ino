@@ -195,7 +195,7 @@ void prepareSound(SoundType mode)
       {
         midier::Note note = nextArpNote();
         midier::midi::Number midiNote = midier::midi::number(note, 4); //octave 4 seems good
-        aOscil.setFreq((float)mtof((int)midiNote)); // (float) cast IS needed, when using the int setFreq function it rounds a bunch of notes (12, 13, 14) all to playing at 12 somehow
+        aOscil.setFreq((float)mtof((int)midiNote)); // (float) cast IS needed, when using the int setFreq function it rounds a bunch of notes (12, 13, 14) all to playing at 12 somehow    
       }
       else
       {
@@ -277,7 +277,7 @@ void handlePotValChange(int pot)
     case KnobFunction::PITCH:
     {
       scaleRoot = midier::Note::C;
-      int semiTonesToAdd = map(potVal[pot], 0, 32, 0, 12);
+      int semiTonesToAdd = map(potVal[pot], 0, potValueMax-2, 0, 12); // Magic number subtract two, otherwise 12 semitTones to add has only one valid knob position input :(
       scaleRoot = (midier::Note)((int)scaleRoot + semiTonesToAdd);
       break;
     }
@@ -390,17 +390,14 @@ AudioOutput_t updateAudio()
   {
     envelope.update();
     return MonoOutput::from16Bit((int) (envelope.next() * aOscil.next()));
-    return;
   }
   switch(soundType)
   {
-
     case SoundType::BAMBOO:
     {
       int asig = (int)
       ((long) aBamboo0.next()*gains.gain0)>>4;
       return MonoOutput::fromAlmostNBit(9, asig).clip();
-      break;
     }
     case SoundType::SQUARE:
     {
