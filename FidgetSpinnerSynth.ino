@@ -38,9 +38,26 @@ const int highBPM = 180;
 const int lowBPMdelay = 60000 / lowBPM; // [ms] for quarter notes
 const int highBPMdelay = 60000 / highBPM; // [ms] for quarter notes
 
+// ADSR synth
+#include <Oscil.h>
+#include <ADSR.h>
+#include <tables/sin8192_int8.h>
+Oscil <8192, AUDIO_RATE> aOscil(SIN8192_DATA);;
+EventDelay noteDelay; // for triggering the envelope
+ADSR <AUDIO_RATE, AUDIO_RATE> envelope;
+boolean note_is_on = true;
+unsigned int duration, attack, decay, sustain, release_ms;
+
+// Bamboo sound sampler
+#include <Sample.h> // Sample template
+#include <samples/bamboo/bamboo_00_2048_int8.h> // wavetable data
+Sample <BAMBOO_00_2048_NUM_CELLS, AUDIO_RATE>aBamboo0(BAMBOO_00_2048_DATA); // use: Sample <table_size, update_rate> SampleName (wavetable)
+EventDelay kTriggerDelay; // for scheduling audio gain changes
+
 // Misc.
-enum class SoundType {ADSR, BAMBOO, LENGTH}; 
+enum class SoundType {ADSR, BAMBOO, SQUARE, LENGTH}; 
 SoundType soundType; // KNOB
+
 //Arp
 bool arpIsOn;
 midier::Degree scaleDegree = 1; // counter for the arp
@@ -70,48 +87,6 @@ void setup(){
   processPotentiometers();
 }
 
-void setsoundType(SoundType mode)
-{
-  if(mode == SoundType::ADSR) // ADSR synth
-  {
-    soundType = SoundType::ADSR;
-  }
-  else if(mode == SoundType::BAMBOO) // Bamboo samples
-  {
-    soundType = SoundType::BAMBOO;
-    kTriggerDelay.set(300); // countdown ms, within resolution of CONTROL_RATE 
-  }
-}
-
-void enableArpMode()
-{
-  arpIsOn = true;
-  scaleDegree = 1;
-}
-
-void disableArpMode()
-{
-  arpIsOn = false;
-}
-
-void nextArpMode()
-{
-  if ((int)arpMode > (int)midier::Mode::Count)
-  {
-    arpMode = (midier::Mode)0;
-    return;
-  }
-  arpMode = (midier::Mode)((int)arpMode + 1);
-}
-
-void nextRootNote()
-{
-  if (scaleRoot == midier::Note::G)
-  {
-    scaleRoot = (midier::Note)0;
-  }
-  scaleRoot = (midier::Note)((int)scaleRoot + 1);
-}
 
 midier::Note nextArpNote()
 {
@@ -137,7 +112,7 @@ midier::Note nextArpNote()
 
 
 byte randomGain(){
-  return rand(200) + 55;
+  return rand(200) + 30;
 }
 
 struct gainstruct{
@@ -183,48 +158,6 @@ void updateEncoderCounts(int i) // index 0-N_FIDGET_SPINNERS
     counts[i]++;
   }
   prevState[i] = state[i];
-}
-
-void processSerialInput()
-{
-  String command;
-  if(Serial.available())
-  {
-    command = Serial.readStringUntil('\n');
-    if(command.startsWith("mode")){
-      if(command.endsWith("0")){
-        setsoundType(SoundType::ADSR);
-      }
-      if(command.endsWith("1")){
-        setsoundType(SoundType::BAMBOO);
-      }
-    }
-    else if(command.startsWith("arp")){
-      if(command.endsWith("On")){
-        enableArpMode();
-      }
-      if(command.endsWith("Off")){
-        disableArpMode();
-      }
-    }
-    else if(command.equals("nextArpMode")){
-      nextArpMode();
-    }
-    else if(command.equals("nextRootNote")){
-      nextRootNote();
-    }
-    else{
-    }
-  }
-}
-
-bool anySpinnerIsTurning()
-{
-  for (int i = 0; i < N_FIDGET_SPINNERS; i++)
-  {
-    if (speed[i] != 0) {return true;}
-  }
-  return false;
 }
 
 byte calcVariableArpSpeed()
@@ -333,7 +266,12 @@ void prepareSound(SoundType mode)
         aBamboo0.start();
         kTriggerDelay.start();
       }
-    break;
+      break;
+    }
+
+    case SoundType::SQUARE:
+    {
+      break;
     }
   }
 }
@@ -382,7 +320,6 @@ void handlePotValChange(int pot)
 
     case KnobFunction::TEMPO:
     {
-      Serial.println(potVal[pot]);
       tempo = map(potVal[pot], 0, 31, lowBPM, highBPM);
       setNewArpTime();
       break;
@@ -437,24 +374,31 @@ void updateControl()
   updateAllSpeeds();
   //speed[1] = 8;
   processPotentiometers();
-  processSerialInput();
   prepareSound(soundType);
-
 }
 
 AudioOutput_t updateAudio()
 {
-  if (soundType==SoundType::ADSR)
+  switch(soundType)
   {
-    envelope.update();
-    return MonoOutput::from16Bit((int) (envelope.next() * aOscil.next()));
-  }
-  
-  else if (soundType == SoundType::BAMBOO)
-  {
-    int asig = (int)
-    ((long) aBamboo0.next()*gains.gain0)>>4;
-    return MonoOutput::fromAlmostNBit(9, asig).clip();
+    case SoundType::ADSR:
+    {
+      envelope.update();
+      return MonoOutput::from16Bit((int) (envelope.next() * aOscil.next()));
+      break;
+    }
+    case SoundType::BAMBOO:
+    {
+      int asig = (int)
+      ((long) aBamboo0.next()*gains.gain0)>>4;
+      return MonoOutput::fromAlmostNBit(9, asig).clip();
+      break;
+    }
+    case SoundType::SQUARE:
+    {
+
+      break;
+    }
   }
 }
 
