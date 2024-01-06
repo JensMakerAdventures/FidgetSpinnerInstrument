@@ -24,6 +24,15 @@ const int highBPMdelay = 60000 / highBPM; // [ms] for quarter notes
 const int potScaleDown = 5;
 const int potValueMax = 1023 >> potScaleDown;
 
+// MIDI
+#include <midi_serialization.h>
+#include <usbmidi.h>
+int ccValuesSpinners[N_FIDGET_SPINNERS];
+int ccValuesPotentiometers[N_POTENTIOMETERS];
+int ccChannelSpinners = 0;
+int ccChannelPotentiometers = 1;
+int ccOffset = 14; // Start at control 14, others are usually for something else.
+
 // Wavetable synth
 #include <Oscil.h>
 #include <ADSR.h>
@@ -75,6 +84,17 @@ void setup(){
   processPotentiometers();
 }
 
+void sendCC(uint8_t channel, uint8_t control, uint8_t value) {
+	USBMIDI.write(0xB0 | (channel & 0xf));
+	USBMIDI.write(control & 0x7f);
+	USBMIDI.write(value & 0x7f);
+}
+
+void sendNote(uint8_t channel, uint8_t note, uint8_t velocity) {
+	USBMIDI.write((velocity != 0 ? 0x90 : 0x80) | (channel & 0xf));
+	USBMIDI.write(note & 0x7f);
+	USBMIDI.write(velocity &0x7f);
+}
 
 midier::Note nextArpNote()
 {
@@ -363,11 +383,16 @@ void handlePotValChange(int pot)
   }
 }
 
+int readAnalogReducedBits(int pin)
+{
+  return mozziAnalogRead(pin)>>potScaleDown;
+}
+
 void processPotentiometers()
 {
   for(int i = 0; i < N_POTENTIOMETERS; i++)
   {
-    potVal[i] = mozziAnalogRead(POTENTIOMETER_PINS[i])>>potScaleDown; // trade off precision for noise reduction. Still this gives problems with noise, find better solution!
+    potVal[i] = readAnalogReducedBits(POTENTIOMETER_PINS[i]); // trade off precision for noise reduction. Still this gives problems with noise, find better solution!
     if(potVal[i] != prevPotVal[i])
     {
       handlePotValChange(i);
@@ -376,12 +401,48 @@ void processPotentiometers()
   }
 }
 
+void sendMidiStates()
+{
+  int value;
+  for(int i = 0; i < N_FIDGET_SPINNERS; i++)
+  {
+    value = speed[i];
+    if (ccValuesSpinners[i] != value) 
+    {
+      sendCC(ccChannelSpinners, i+ccOffset, value);
+      ccValuesSpinners[i] = value;
+    }
+  }
+
+  for(int i = 0; i < N_POTENTIOMETERS; i++)
+  {
+
+    value = potVal[i];
+    if (ccValuesPotentiometers[i] != value) 
+    {
+      sendCC(ccChannelPotentiometers, i+ccOffset, value);
+      ccValuesPotentiometers[i] = value;
+    }
+  }
+}
+
 void updateControl()
 {
-  updateAllSpeeds();
+  //updateAllSpeeds();
   //speed[1] = 8;
-  processPotentiometers();
+  //processPotentiometers();
+  speed[1]++;
+  if(speed[1]>30)
+  {
+    speed[1] = 0;
+  }
+  potVal[1]++;
+  if(potVal[1]>31)
+  {
+    potVal[1] = 0;
+  }
   prepareSound(soundType);
+  sendMidiStates();
 }
 
 AudioOutput_t updateAudio()
