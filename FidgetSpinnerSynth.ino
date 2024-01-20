@@ -58,6 +58,14 @@ EventDelay kTriggerDelay; // for scheduling audio gain changes
 enum class SoundType {SINE, SAW, SQUARE, BAMBOO, LENGTH}; 
 SoundType soundType; // KNOB
 
+// Filter
+#include <ResonantFilter.h>
+LowPassFilter rf; // Used for nice low pass
+LowPassFilter rf2; // used for glitching
+uint8_t resonance; 
+enum class FxType {NONE, FILTER, GLITCH, DISTORTION, LENGTH}; 
+FxType fxType;
+
 //Arp
 bool arpIsOn;
 midier::Degree scaleDegree = 1; // counter for the arp
@@ -447,9 +455,43 @@ void sendMidiStates()
     }
   }
 }
+float overdrive;
+void controlFX()
+{
+  if(potVal[6] < 30)
+  {
+    fxType = FxType::NONE;
+    return;
+  }
+  if(potVal[6] < 500)
+  {
+    fxType = FxType::FILTER;
+    byte cutoff_freq = 80+potVal[6]/3;
+    resonance = 220; // range 0-255, 255 is most resonant, 255 clips at the given attenuation so 220 was chosen
+    rf.setCutoffFreqAndResonance(cutoff_freq, resonance);
+    return;
+  }
+  if(potVal[6] < 750)
+  {
+    fxType = FxType::DISTORTION;
+    return;
+  }
+  else
+  {
+    fxType = FxType::GLITCH;
+    byte cutoff_freq = map(potVal[6], 750, 1023, 200, 300);
+    Serial.println(cutoff_freq);
+    resonance = 255; // go nuts
+    rf2.setCutoffFreqAndResonance(cutoff_freq, resonance);
+    overdrive = 1.00+(float(potVal[6])-(float)500.0)/200.0;
+    return;
+  }
+}
 
 void updateControl()
 {
+  Serial.println((int)fxType);
+  controlFX();
   updateAllSpeeds();  
   processPotentiometers();
   prepareSound(soundType);
@@ -461,20 +503,57 @@ AudioOutput_t updateAudio()
   if(soundType==SoundType::SINE | soundType==SoundType::SQUARE | soundType==SoundType::SAW)
   {
     envelope.update();
-    return MonoOutput::from16Bit((int) (envelope.next() * aOscil.next()));
+    switch(fxType)
+    {
+      case FxType::FILTER:
+      {
+        return MonoOutput::from16Bit((int) (envelope.next() * rf.next(aOscil.next()>>1)));
+      }
+      case FxType::NONE:
+      {
+        return MonoOutput::from16Bit((int) (envelope.next() * aOscil.next()))<<1;
+      }
+      case FxType::DISTORTION:
+      {
+        return MonoOutput::fromAlmostNBit(9,((int) (envelope.next() * rf2.next(aOscil.next()>>1))))<<2;
+      }
+      case FxType::GLITCH:
+      {
+        return MonoOutput::fromAlmostNBit(9,((int) (envelope.next() * rf2.next(aOscil.next()>>1)))).clip();
+      }
+    }
   }
   switch(soundType)
   {
     case SoundType::BAMBOO:
     {
-      int asig = (int)
-      ((long) aBamboo0.next()*gains.gain0)>>4;
-      return MonoOutput::fromAlmostNBit(9, asig).clip();
-    }
-    case SoundType::SQUARE:
-    {
-
-      break;
+      switch(fxType)
+      {
+        case FxType::FILTER:
+        {
+          int asig = (int)
+          ((long) rf.next(aBamboo0.next()>>1)*gains.gain0)>>4;
+          return MonoOutput::fromAlmostNBit(9, asig).clip();
+        }
+        case FxType::NONE:
+        {
+          int asig = (int)
+          ((long) aBamboo0.next()*gains.gain0)>>4;
+          return MonoOutput::fromAlmostNBit(9, asig).clip();
+        }
+        case FxType::DISTORTION:
+        {
+          int asig = (int)
+          ((long) aBamboo0.next()*gains.gain0)>>4;
+          return MonoOutput::fromAlmostNBit(9, asig)>>2;
+        }
+        case FxType::GLITCH:
+        {
+          int asig = (int)
+          ((long) 8.0 * overdrive *aBamboo0.next()*gains.gain0)>>6;
+          return MonoOutput::fromAlmostNBit(9, asig).clip();
+        }
+      }
     }
   }
 }
