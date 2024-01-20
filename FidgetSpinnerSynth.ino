@@ -7,22 +7,25 @@
 
 // HARDWARE CONFIG
 const int N_FIDGET_SPINNERS = 8;
-const int ENCODER_PINS[N_FIDGET_SPINNERS] = {2,3,4,5,6,7,8,10};
-const int N_POTENTIOMETERS = 6;
-const int POTENTIOMETER_PINS[N_POTENTIOMETERS] = {A0, A1, A2, A4, A6, A7}; // pay attention here, the order is linked to KnobFunction order!
-enum class KnobFunction {PITCH, TEMPO, MODE, ARPTYPE, SOUNDTYPE, RHYTHM, LENGTH}; 
+const int ENCODER_PINS[N_FIDGET_SPINNERS] = {2,3,5,7,14,15,16,10};
+const int N_POTENTIOMETERS = 7;
+const int POTENTIOMETER_PINS[N_POTENTIOMETERS] = {A0, A1, A2, A3, A6, A7, A8}; // pay attention here, the order is linked to KnobFunction order!
+enum class KnobFunction {PITCH, TEMPO, MODE, ARPTYPE, SOUNDTYPE, RHYTHM, EFFECT, LENGTH};
+bool potMetersAreInverted = true;
 
 // SOFTWARE CONFIG, DON'T TOUCH
 const int CONTROL_RATE_HZ = 128; // 128 Hz, so 15.6 ms is needed to get  max fidget spinner speed correctly
 const float CONTROL_RATE_MS = 1.0/CONTROL_RATE_HZ*1000.0;
 const int SPEED_CALC_DIVIDER = 25;
+const int POT_CALC_DIVIDER = 4;
+const int POT_HYSTERYSIS = 10;
 const int PULSES_PER_REVOLUTION = 3;
 const int lowBPM = 60;
 const int highBPM = 180;
 const int lowBPMdelay = 60000 / lowBPM; // [ms] for quarter notes
 const int highBPMdelay = 60000 / highBPM; // [ms] for quarter notes
 const int potScaleDown = 5;
-const int potValueMax = 1023 >> potScaleDown;
+const int potValueMax = 1023;
 
 // MIDI
 #include <midi_serialization.h>
@@ -65,7 +68,10 @@ int tempo = 120; // KNOB [BPM]
 int noteSpeedMultiplier = 1; // 1/4th (1) 1/8th (2) 1/16th (4) 1/32th (8) notes multiplication factor
 int prevPotVal[N_POTENTIOMETERS] = {-1, -1, -1, -1}; // Setting all to -1 makes sure in setup we encounter a change and everthing initializes OK.
 int potVal[N_POTENTIOMETERS];
+long potValTemp[N_POTENTIOMETERS];
+long potCalcCount;
 long speedCalcCount;
+
 long counts[N_FIDGET_SPINNERS];
 bool prevState[N_FIDGET_SPINNERS];
 bool state[N_FIDGET_SPINNERS];
@@ -297,20 +303,20 @@ void handlePotValChange(int pot)
     case KnobFunction::PITCH:
     {
       scaleRoot = midier::Note::C;
-      int semiTonesToAdd = map(potVal[pot], 0, potValueMax-2, 0, 12); // Magic number subtract two, otherwise 12 semitTones to add has only one valid knob position input :(
+      int semiTonesToAdd = map(potVal[pot], 0, potValueMax+POT_HYSTERYSIS, 0, 12);
       scaleRoot = (midier::Note)((int)scaleRoot + semiTonesToAdd);
       break;
     }
     case KnobFunction::MODE:
     {
       arpMode = (midier::Mode) 0;
-      int arpModeStepsToAdd = map(potVal[pot], 0, potValueMax+1, 0, (int)midier::Mode::Count);
+      int arpModeStepsToAdd = map(potVal[pot], 0, potValueMax+POT_HYSTERYSIS, 0, (int)midier::Mode::Count);
       arpMode = (midier::Mode)((int)arpMode + arpModeStepsToAdd);
       break;
     }
     case KnobFunction::ARPTYPE:
     {
-      if(potVal[pot] > 15) 
+      if(potVal[pot] > (int)(potValueMax+POT_HYSTERYSIS)/2) 
       {
         arpIsOn = true;
       }  
@@ -323,7 +329,7 @@ void handlePotValChange(int pot)
 
     case KnobFunction::SOUNDTYPE:
     {
-      soundType = (SoundType)map(potVal[pot], 0, potValueMax+1, 0, (int)SoundType::LENGTH); 
+      soundType = (SoundType)map(potVal[pot], 0, potValueMax+POT_HYSTERYSIS, 0, (int)SoundType::LENGTH); 
       switch (soundType)
       {
         case SoundType::SAW:
@@ -347,26 +353,26 @@ void handlePotValChange(int pot)
 
     case KnobFunction::TEMPO:
     {
-      tempo = map(potVal[pot], 0, potValueMax+1, lowBPM, highBPM);
+      tempo = map(potVal[pot], 0, potValueMax+POT_HYSTERYSIS, lowBPM, highBPM);
       setNewArpTime();
       break;
     }
 
     case KnobFunction::RHYTHM:
     {
-      if(potVal[pot] < 8)
+      if(potVal[pot] < potValueMax+POT_HYSTERYSIS*1/4)
       {
         noteSpeedMultiplier = 1; // quarter notes
         setNewArpTime();
         break;
       }
-      if(potVal[pot] < 16)
+      if(potVal[pot] < potValueMax+POT_HYSTERYSIS*2/4)
       {
         noteSpeedMultiplier = 2; // eight notes
         setNewArpTime();
         break;
       }
-      if(potVal[pot] < 24)
+      if(potVal[pot] < potValueMax+POT_HYSTERYSIS*3/4)
       {
         noteSpeedMultiplier = 4; // 1/16th notes
         setNewArpTime();
@@ -383,21 +389,40 @@ void handlePotValChange(int pot)
   }
 }
 
-int readAnalogReducedBits(int pin)
-{
-  return mozziAnalogRead(pin)>>potScaleDown;
-}
-
 void processPotentiometers()
 {
+  
   for(int i = 0; i < N_POTENTIOMETERS; i++)
   {
-    potVal[i] = readAnalogReducedBits(POTENTIOMETER_PINS[i]); // trade off precision for noise reduction. Still this gives problems with noise, find better solution!
-    if(potVal[i] != prevPotVal[i])
-    {
-      handlePotValChange(i);
+    if(potMetersAreInverted){
+      potValTemp[i] += (potValueMax-mozziAnalogRead(i));
     }
-    prevPotVal[i] = potVal[i];
+    else{
+      potValTemp[i] += mozziAnalogRead(i);
+    }
+  }
+
+  potCalcCount++;
+
+  if(potCalcCount == POT_CALC_DIVIDER)
+  {
+    for(int i = 0; i < N_POTENTIOMETERS; i++)
+    { 
+      prevPotVal[i] = potVal[i];
+      int temp = (int)((float)potValTemp[i]/POT_CALC_DIVIDER);
+      if(abs(temp - potVal[i]) > POT_HYSTERYSIS) // only if the button has moved enough we accept the new value
+      {
+        potVal[i] = temp;
+      }
+      
+
+      if(potVal[i] != prevPotVal[i])
+      {
+        handlePotValChange(i);
+      }
+    }
+    memset(potValTemp,0,sizeof(potValTemp)); // set all counts back to zero
+    potCalcCount = 0;
   }
 }
 
@@ -426,11 +451,25 @@ void sendMidiStates()
   }
 }
 
+int temp = 0;
 void updateControl()
 {
-  //updateAllSpeeds();
+  updateAllSpeeds();
   //speed[1] = 8;
-  //processPotentiometers();
+  
+  processPotentiometers();
+  if(temp > 100){
+    Serial.println("potvalues: ");
+    for(int i = 0; i < 7; i++)
+    {
+      
+      Serial.println(mozziAnalogRead(POTENTIOMETER_PINS[i]));
+    }
+    temp = 0;
+  }
+  temp++;
+  //speed[1] = 8;
+  /*
   speed[1]++;
   if(speed[1]>30)
   {
@@ -441,6 +480,7 @@ void updateControl()
   {
     potVal[1] = 0;
   }
+  */
   prepareSound(soundType);
   sendMidiStates();
 }
