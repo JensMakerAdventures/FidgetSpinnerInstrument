@@ -360,19 +360,19 @@ void handlePotValChange(int pot)
 
     case KnobFunction::RHYTHM:
     {
-      if(potVal[pot] < potValueMax+POT_HYSTERYSIS*1/4)
+      if(potVal[pot] < (potValueMax+POT_HYSTERYSIS)*1/4)
       {
         noteSpeedMultiplier = 1; // quarter notes
         setNewArpTime();
         break;
       }
-      if(potVal[pot] < potValueMax+POT_HYSTERYSIS*2/4)
+      if(potVal[pot] < (potValueMax+POT_HYSTERYSIS)*2/4)
       {
         noteSpeedMultiplier = 2; // eight notes
         setNewArpTime();
         break;
       }
-      if(potVal[pot] < potValueMax+POT_HYSTERYSIS*3/4)
+      if(potVal[pot] < (potValueMax+POT_HYSTERYSIS)*3/4)
       {
         noteSpeedMultiplier = 4; // 1/16th notes
         setNewArpTime();
@@ -388,17 +388,16 @@ void handlePotValChange(int pot)
     }
   }
 }
-
+int test;
 void processPotentiometers()
 {
-  
   for(int i = 0; i < N_POTENTIOMETERS; i++)
   {
     if(potMetersAreInverted){
-      potValTemp[i] += (potValueMax-mozziAnalogRead(i));
+      potValTemp[i] += (potValueMax-mozziAnalogRead(POTENTIOMETER_PINS[i]));
     }
     else{
-      potValTemp[i] += mozziAnalogRead(i);
+      potValTemp[i] += mozziAnalogRead(POTENTIOMETER_PINS[i]);
     }
   }
 
@@ -414,7 +413,6 @@ void processPotentiometers()
       {
         potVal[i] = temp;
       }
-      
 
       if(potVal[i] != prevPotVal[i])
       {
@@ -441,7 +439,6 @@ void sendMidiStates()
 
   for(int i = 0; i < N_POTENTIOMETERS; i++)
   {
-
     value = potVal[i];
     if (ccValuesPotentiometers[i] != value) 
     {
@@ -451,36 +448,10 @@ void sendMidiStates()
   }
 }
 
-int temp = 0;
 void updateControl()
 {
-  updateAllSpeeds();
-  //speed[1] = 8;
-  
+  updateAllSpeeds();  
   processPotentiometers();
-  if(temp > 100){
-    Serial.println("potvalues: ");
-    for(int i = 0; i < 7; i++)
-    {
-      
-      Serial.println(mozziAnalogRead(POTENTIOMETER_PINS[i]));
-    }
-    temp = 0;
-  }
-  temp++;
-  //speed[1] = 8;
-  /*
-  speed[1]++;
-  if(speed[1]>30)
-  {
-    speed[1] = 0;
-  }
-  potVal[1]++;
-  if(potVal[1]>31)
-  {
-    potVal[1] = 0;
-  }
-  */
   prepareSound(soundType);
   sendMidiStates();
 }
