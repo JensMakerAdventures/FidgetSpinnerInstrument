@@ -40,6 +40,7 @@ int ccOffset = 14; // Start at control 14, others are usually for something else
 #include <Oscil.h>
 #include <ADSR.h>
 #include <tables/sin512_int8.h>
+#include <tables/triangle512_int8.h>
 #include <tables/saw_analogue512_int8.h>
 #include <tables/square_analogue512_int8.h>
 
@@ -55,7 +56,7 @@ Sample <BAMBOO_00_2048_NUM_CELLS, AUDIO_RATE>aBamboo0(BAMBOO_00_2048_DATA); // u
 EventDelay kTriggerDelay; // for scheduling audio gain changes
 
 // Misc.
-enum class SoundType {SINE, SAW, SQUARE, BAMBOO, LENGTH}; 
+enum class SoundType {SINE, TRIANGLE, SAW, SQUARE, BAMBOO, LENGTH}; 
 SoundType soundType; // KNOB
 
 // Filter
@@ -221,7 +222,7 @@ void prepareSound(SoundType mode)
     return;
   }
 
-  if (mode==SoundType::SINE | mode==SoundType::SQUARE | mode==SoundType::SAW)
+  if (mode==SoundType::SINE | mode==SoundType::TRIANGLE | mode==SoundType::SQUARE | mode==SoundType::SAW)
   {
     if((noteDelay.ready()))
     {       
@@ -353,6 +354,11 @@ void handlePotValChange(int pot)
         case SoundType::SINE:
         {
           aOscil.setTable(SIN512_DATA);
+          break;
+        }
+        case SoundType::TRIANGLE:
+        {
+          aOscil.setTable(TRIANGLE512_DATA);
           break;
         }
       }
@@ -500,7 +506,7 @@ void updateControl()
 
 AudioOutput_t updateAudio()
 {
-  if(soundType==SoundType::SINE | soundType==SoundType::SQUARE | soundType==SoundType::SAW)
+  if(soundType==SoundType::SINE | soundType==SoundType::TRIANGLE | soundType==SoundType::SQUARE | soundType==SoundType::SAW)
   {
     envelope.update();
     switch(fxType)
