@@ -517,7 +517,7 @@ AudioOutput_t updateAudio()
       }
       case FxType::NONE:
       {
-        return MonoOutput::from16Bit((int) (envelope.next() * aOscil.next()))<<1;
+        return MonoOutput::from16Bit((int) (envelope.next() * aOscil.next()));
       }
       case FxType::DISTORTION:
       {
