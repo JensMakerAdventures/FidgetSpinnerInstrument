@@ -55,14 +55,14 @@ unsigned int attack, decay, sustain, release_ms;
 char v[N_FIDGET_SPINNERS];
 float multiNotes[N_FIDGET_SPINNERS];
 
-Oscil<COS8192_NUM_CELLS, AUDIO_RATE> aCos0(COS8192_DATA);
-Oscil<COS8192_NUM_CELLS, AUDIO_RATE> aCos1(COS8192_DATA);
-Oscil<COS8192_NUM_CELLS, AUDIO_RATE> aCos2(COS8192_DATA);
-Oscil<COS8192_NUM_CELLS, AUDIO_RATE> aCos3(COS8192_DATA);
-Oscil<COS8192_NUM_CELLS, AUDIO_RATE> aCos4(COS8192_DATA);
-Oscil<COS8192_NUM_CELLS, AUDIO_RATE> aCos5(COS8192_DATA);
-Oscil<COS8192_NUM_CELLS, AUDIO_RATE> aCos6(COS8192_DATA);
-Oscil<COS8192_NUM_CELLS, AUDIO_RATE> aCos7(COS8192_DATA);
+Oscil<SQUARE_ANALOGUE512_NUM_CELLS, AUDIO_RATE> aCos0(SQUARE_ANALOGUE512_DATA);
+Oscil<SQUARE_ANALOGUE512_NUM_CELLS, AUDIO_RATE> aCos1(SQUARE_ANALOGUE512_DATA);
+Oscil<SQUARE_ANALOGUE512_NUM_CELLS, AUDIO_RATE> aCos2(SQUARE_ANALOGUE512_DATA);
+Oscil<SQUARE_ANALOGUE512_NUM_CELLS, AUDIO_RATE> aCos3(SQUARE_ANALOGUE512_DATA);
+Oscil<SQUARE_ANALOGUE512_NUM_CELLS, AUDIO_RATE> aCos4(SQUARE_ANALOGUE512_DATA);
+Oscil<SQUARE_ANALOGUE512_NUM_CELLS, AUDIO_RATE> aCos5(SQUARE_ANALOGUE512_DATA);
+Oscil<SQUARE_ANALOGUE512_NUM_CELLS, AUDIO_RATE> aCos6(SQUARE_ANALOGUE512_DATA);
+Oscil<SQUARE_ANALOGUE512_NUM_CELLS, AUDIO_RATE> aCos7(SQUARE_ANALOGUE512_DATA);
 
 // Bamboo sound sampler
 #include <Sample.h> // Sample template
@@ -74,16 +74,23 @@ EventDelay kTriggerDelay; // for scheduling audio gain changes
 enum class SoundType {SINE, TRIANGLE, SAW, SQUARE, BAMBOO, LENGTH}; 
 SoundType soundType; // KNOB
 
-// Filter
+// Filter effect
 #include <ResonantFilter.h>
 LowPassFilter rf; // Used for nice low pass
 LowPassFilter rf2; // used for glitching
 uint8_t resonance; 
-enum class FxType {NONE, FILTER, GLITCH, DISTORTION, LENGTH}; 
+enum class FxType {NONE, FILTER, TREMOLO, WARP, GLITCH, LENGTH}; 
 FxType fxType;
 
+// Warp effect
+Oscil<COS8192_NUM_CELLS, CONTROL_RATE> kWarp(COS8192_DATA); // speed is constant and set in setup
+
+// Tremolo effect
+Oscil<COS8192_NUM_CELLS, CONTROL_RATE> kTremolo(COS8192_DATA);
+char vTremolo;
+
 //Arp
-enum class ArpType {UPWARDS, SPEED_BASED, MULTI_NOTE, LENGTH};
+enum class ArpType {UPWARDS, MULTI_NOTE, SPEED_BASED, LENGTH};
 ArpType arpType;
 midier::Degree scaleDegree = 1; // counter for the arp
 midier::Mode arpMode = midier::Mode::Ionian; // KNOB
@@ -113,6 +120,8 @@ void setup(){
   adcDisconnectAllDigitalIns(); // Mozzi docs says this helps power consumption and noise
   Serial.begin(9600);
   processPotentiometers();
+  kWarp.setFreq(3); // for now we have a constant frequency for the warp effect (this one is high because used in audio loop, not control loop)
+  kTremolo.setFreq(3); // constant lfo frequency for tremolo effect (since this is run in control loop, not audio loop)
 }
 
 void sendCC(uint8_t channel, uint8_t control, uint8_t value) {
@@ -143,7 +152,6 @@ midier::Note nextArpNote()
       // calculate the root note of the chord of this scale degree
       const midier::Note chordRoot = scaleRoot + interval;
       scaleDegree++;
-      Serial.println(i);
       return chordRoot;
     }  
     scaleDegree++;
@@ -235,7 +243,6 @@ void prepareSound(SoundType mode)
 {
   if (arpType == ArpType::MULTI_NOTE)
   {
-    Serial.println();
     for(int i = 0; i < 8; i++)
     {
       v[i] = speed[i]*6;
@@ -245,8 +252,7 @@ void prepareSound(SoundType mode)
       
       // calculate the root note of the chord of this scale degree
       const midier::Note chordRoot = scaleRoot + interval;
-      
-      Serial.println((int)chordRoot);
+
       midier::midi::Number midiNote = midier::midi::number(chordRoot, 4); //octave 4 seems good
 
       switch(i)
@@ -528,28 +534,35 @@ void sendMidiStates()
 float overdrive;
 void controlFX()
 {
-  if(potVal[6] < 30)
+  if(potVal[6] < potValueMax*1/(int)FxType::LENGTH)
   {
     fxType = FxType::NONE;
     return;
   }
-  if(potVal[6] < 500)
+  if(potVal[6] < potValueMax*2/(int)FxType::LENGTH)
   {
     fxType = FxType::FILTER;
-    byte cutoff_freq = 80+potVal[6]/3;
+    byte cutoff_freq = map(potVal[6], potValueMax*1/(int)FxType::LENGTH, potValueMax*2/(int)FxType::LENGTH, 80, 250);
     resonance = 220; // range 0-255, 255 is most resonant, 255 clips at the given attenuation so 220 was chosen
     rf.setCutoffFreqAndResonance(cutoff_freq, resonance);
     return;
   }
-  if(potVal[6] < 750)
+  if(potVal[6] < potValueMax*3/(int)FxType::LENGTH)
   {
-    fxType = FxType::DISTORTION;
+    fxType = FxType::TREMOLO;
+    vTremolo = kTremolo.next();
+    Serial.println((int)v[0]);
     return;
   }
-  else
+  if(potVal[6] < potValueMax*4/(int)FxType::LENGTH)
+  {
+    fxType = FxType::WARP;
+    return;
+  }  
+  if(potVal[6] < potValueMax*5/(int)FxType::LENGTH)
   {
     fxType = FxType::GLITCH;
-    byte cutoff_freq = map(potVal[6], 750, 1023, 200, 300);
+    byte cutoff_freq = map(potVal[6], potValueMax*3/(int)FxType::LENGTH, potValueMax*4/(int)FxType::LENGTH, 200, 300);
     resonance = 255; // go nuts
     rf2.setCutoffFreqAndResonance(cutoff_freq, resonance);
     overdrive = 1.00+(float(potVal[6])-(float)500.0)/200.0;
@@ -564,6 +577,7 @@ void updateControl()
   processPotentiometers();
   prepareSound(soundType);
   sendMidiStates();
+
 }
 
 AudioOutput_t updateAudio()
@@ -584,13 +598,17 @@ AudioOutput_t updateAudio()
         {
           return MonoOutput::from16Bit((int) (envelope.next() * aOscil.next()));
         }
-        case FxType::DISTORTION:
+        case FxType::WARP:
         {
-          return MonoOutput::fromAlmostNBit(9,((int) (envelope.next() * rf2.next(aOscil.next()>>1))))<<2;
+          return MonoOutput::from16Bit((int) (((long)envelope.next() * (long)aOscil.next() * (long)kWarp.next())>>8));
+        }
+        case FxType::TREMOLO:
+        {
+          return MonoOutput::from16Bit((int) (((long)envelope.next() * (long)aOscil.next() * vTremolo)>>7));
         }
         case FxType::GLITCH:
         {
-          return MonoOutput::fromAlmostNBit(9,((int) (envelope.next() * rf2.next(aOscil.next()>>1)))).clip();
+          return MonoOutput::fromAlmostNBit(9,((int) (envelope.next() * rf2.next(aOscil.next()>>1)))).clip()>>2;
         }
       }
     }
@@ -612,11 +630,17 @@ AudioOutput_t updateAudio()
             ((long) aBamboo0.next()*gains.gain0)>>4;
             return MonoOutput::fromAlmostNBit(9, asig).clip();
           }
-          case FxType::DISTORTION:
+          case FxType::TREMOLO:
           {
             int asig = (int)
-            ((long) aBamboo0.next()*gains.gain0)>>4;
-            return MonoOutput::fromAlmostNBit(9, asig)>>2;
+            ((long) aBamboo0.next()*gains.gain0*vTremolo>>4)>>6;
+            return MonoOutput::fromAlmostNBit(9, asig).clip();
+          }
+          case FxType::WARP:
+          {
+            int asig = (int)
+            ((long) aBamboo0.next()*gains.gain0*kWarp.next())>>8;
+            return MonoOutput::fromAlmostNBit(9, asig).clip();
           }
           case FxType::GLITCH:
           {
@@ -639,7 +663,7 @@ AudioOutput_t updateAudio()
       aCos5.next()*v[5] +
       aCos6.next()*v[6] +
       aCos7.next()*v[7];
-    return MonoOutput::fromAlmostNBit(18, asig<<1);
+    return MonoOutput::fromAlmostNBit(18, asig<<1).clip();
   }
 }
 
