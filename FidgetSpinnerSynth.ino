@@ -18,7 +18,7 @@ const int CONTROL_RATE_HZ = 128; // 128 Hz, so 15.6 ms is needed to get  max fid
 const float CONTROL_RATE_MS = 1.0/CONTROL_RATE_HZ*1000.0;
 const int SPEED_CALC_DIVIDER = 25;
 const int POT_CALC_DIVIDER = 4;
-const int POT_HYSTERYSIS = 10;
+const int POT_HYSTERESIS = 10;
 const int PULSES_PER_REVOLUTION = 3;
 const int lowBPM = 60;
 const int highBPM = 180;
@@ -49,6 +49,21 @@ EventDelay noteDelay; // for triggering the envelope
 ADSR <AUDIO_RATE, AUDIO_RATE> envelope;
 unsigned int attack, decay, sustain, release_ms;
 
+// Multinote
+// audio volumes updated each control interrupt and reused in audio till next control
+#include <tables/cos8192_int8.h>
+char v0, v1,v2,v3,v4,v5,v6,v7;
+const int NUM_VOICES = 8;
+float multiNotes[NUM_VOICES];
+Oscil<COS8192_NUM_CELLS, AUDIO_RATE> aCos1(COS8192_DATA);
+Oscil<COS8192_NUM_CELLS, AUDIO_RATE> aCos2(COS8192_DATA);
+Oscil<COS8192_NUM_CELLS, AUDIO_RATE> aCos3(COS8192_DATA);
+Oscil<COS8192_NUM_CELLS, AUDIO_RATE> aCos4(COS8192_DATA);
+Oscil<COS8192_NUM_CELLS, AUDIO_RATE> aCos5(COS8192_DATA);
+Oscil<COS8192_NUM_CELLS, AUDIO_RATE> aCos6(COS8192_DATA);
+Oscil<COS8192_NUM_CELLS, AUDIO_RATE> aCos7(COS8192_DATA);
+Oscil<COS8192_NUM_CELLS, AUDIO_RATE> aCos0(COS8192_DATA);
+
 // Bamboo sound sampler
 #include <Sample.h> // Sample template
 #include <samples/bamboo/bamboo_00_2048_int8.h> // wavetable data
@@ -68,7 +83,8 @@ enum class FxType {NONE, FILTER, GLITCH, DISTORTION, LENGTH};
 FxType fxType;
 
 //Arp
-bool arpIsOn;
+enum class ArpType {UPWARDS, SPEED_BASED, MULTI_NOTE, LENGTH};
+ArpType arpType;
 midier::Degree scaleDegree = 1; // counter for the arp
 midier::Mode arpMode = midier::Mode::Ionian; // KNOB
 midier::Note scaleRoot = midier::Note::G; // KNOB
@@ -226,13 +242,13 @@ void prepareSound(SoundType mode)
   {
     if((noteDelay.ready()))
     {       
-      if (arpIsOn)
+      if (arpType == ArpType::UPWARDS)
       {
         midier::Note note = nextArpNote();
         midier::midi::Number midiNote = midier::midi::number(note, 4); //octave 4 seems good
         aOscil.setFreq((float)mtof((int)midiNote)); // (float) cast IS needed, when using the int setFreq function it rounds a bunch of notes (12, 13, 14) all to playing at 12 somehow    
       }
-      else
+      if(arpType == ArpType::SPEED_BASED)
       {
         byte midi_note = 75 + rand(-2, 2) + map(variableArpSpeed, 0, 20, -10, 10);
         aOscil.setFreq((int)mtof(midi_note));
@@ -247,11 +263,11 @@ void prepareSound(SoundType mode)
       envelope.setADLevels(attack_level,decay_level);
       envelope.setTimes(attack,decay,sustain,release_ms);  
       envelope.noteOn();
-      if(arpIsOn)
+      if(arpType == ArpType::UPWARDS)
       {
         noteDelay.start(noteTime);
       }
-      else
+      if(arpType == ArpType::SPEED_BASED)
       {
         noteDelay.start(map(variableArpSpeed, 0, 20, 350, 30));
       }
@@ -264,23 +280,23 @@ void prepareSound(SoundType mode)
     case SoundType::BAMBOO:
     {
       if(kTriggerDelay.ready()){
-        if(arpIsOn)
+        if(arpType == ArpType::UPWARDS)
         {
           kTriggerDelay.set(noteTime);
         }
-        else
+        if(arpType == ArpType::SPEED_BASED)
         {
           kTriggerDelay.set(map(variableArpSpeed, 0, 20, 500, 30));
         }
         
         midier::midi::Number midiNote;
-        if (arpIsOn)
+        if (arpType == ArpType::UPWARDS)
         {
           midier::Note note = nextArpNote();
           midiNote = midier::midi::number(note, 2) + 6; // prescale 2 octaves up, mtof makes mistakes in lower ranges. Offset 5 necessary to be in tune with synths.
           aBamboo0.setFreq((float)mtof((int)midiNote)/8); // (float) cast IS needed, when using the int setFreq function it rounds a bunch of notes (12, 13, 14) all to playing at 12 somehow. scale down earlier scale up
         }
-        else
+        if(arpType == ArpType::SPEED_BASED)
         {
           float pitchChange = mapFloat((float)variableArpSpeed, 0.0, 20.0, 0.8, 1.5);
           aBamboo0.setFreq((float) BAMBOO_00_2048_SAMPLERATE / (float) (BAMBOO_00_2048_NUM_CELLS)*pitchChange);
@@ -307,38 +323,55 @@ void setNewArpTime()
 
 void handlePotValChange(int pot)
 {
+  /*
+  Serial.println("change of parameter: ");
+  Serial.println(pot);
+  Serial.println(potVal[pot]);
+  */
   switch((KnobFunction)pot)
   {
     case KnobFunction::PITCH:
     {
       scaleRoot = midier::Note::C;
-      int semiTonesToAdd = map(potVal[pot], 0, potValueMax+POT_HYSTERYSIS, 0, 12);
+      int semiTonesToAdd = map(potVal[pot], 0, potValueMax+POT_HYSTERESIS, 0, 12);
       scaleRoot = (midier::Note)((int)scaleRoot + semiTonesToAdd);
       break;
     }
     case KnobFunction::MODE:
     {
       arpMode = (midier::Mode) 0;
-      int arpModeStepsToAdd = map(potVal[pot], 0, potValueMax+POT_HYSTERYSIS, 0, (int)midier::Mode::Count);
+      int arpModeStepsToAdd = map(potVal[pot], 0, potValueMax+POT_HYSTERESIS, 0, (int)midier::Mode::Count);
       arpMode = (midier::Mode)((int)arpMode + arpModeStepsToAdd);
       break;
     }
     case KnobFunction::ARPTYPE:
     {
-      if(potVal[pot] > (int)(potValueMax+POT_HYSTERYSIS)/2) 
-      {
-        arpIsOn = true;
-      }  
-      else 
-      {
-        arpIsOn = false;
-      }
+      arpType = (ArpType)map(potVal[pot], 0, potValueMax+POT_HYSTERESIS, 0, (int)ArpType::LENGTH);
+      Serial.println("arpType: ");
+      Serial.println((int)arpType);
+      /*
+      switch(arpType)
+      { 
+        case ArpType::UPWARDS:
+        {
+          break;
+        }
+        case ArpType::MULTI_NOTE:
+        {
+          break;
+        }
+        case ArpType::SPEED_BASED:
+        {
+          break;
+        }
+        
+      }*/
       break;
     }
 
     case KnobFunction::SOUNDTYPE:
     {
-      soundType = (SoundType)map(potVal[pot], 0, potValueMax+POT_HYSTERYSIS, 0, (int)SoundType::LENGTH); 
+      soundType = (SoundType)map(potVal[pot], 0, potValueMax+POT_HYSTERESIS, 0, (int)SoundType::LENGTH); 
       switch (soundType)
       {
         case SoundType::SAW:
@@ -367,26 +400,26 @@ void handlePotValChange(int pot)
 
     case KnobFunction::TEMPO:
     {
-      tempo = map(potVal[pot], 0, potValueMax+POT_HYSTERYSIS, lowBPM, highBPM);
+      tempo = map(potVal[pot], 0, potValueMax+POT_HYSTERESIS, lowBPM, highBPM);
       setNewArpTime();
       break;
     }
 
     case KnobFunction::RHYTHM:
     {
-      if(potVal[pot] < (potValueMax+POT_HYSTERYSIS)*1/4)
+      if(potVal[pot] < (potValueMax+POT_HYSTERESIS)*1/4)
       {
         noteSpeedMultiplier = 1; // quarter notes
         setNewArpTime();
         break;
       }
-      if(potVal[pot] < (potValueMax+POT_HYSTERYSIS)*2/4)
+      if(potVal[pot] < (potValueMax+POT_HYSTERESIS)*2/4)
       {
         noteSpeedMultiplier = 2; // eight notes
         setNewArpTime();
         break;
       }
-      if(potVal[pot] < (potValueMax+POT_HYSTERYSIS)*3/4)
+      if(potVal[pot] < (potValueMax+POT_HYSTERESIS)*3/4)
       {
         noteSpeedMultiplier = 4; // 1/16th notes
         setNewArpTime();
@@ -423,7 +456,7 @@ void processPotentiometers()
     { 
       prevPotVal[i] = potVal[i];
       int temp = (int)((float)potValTemp[i]/POT_CALC_DIVIDER);
-      if(abs(temp - potVal[i]) > POT_HYSTERYSIS) // only if the button has moved enough we accept the new value
+      if(abs(temp - potVal[i]) > POT_HYSTERESIS) // only if the button has moved enough we accept the new value
       {
         potVal[i] = temp;
       }
@@ -486,7 +519,6 @@ void controlFX()
   {
     fxType = FxType::GLITCH;
     byte cutoff_freq = map(potVal[6], 750, 1023, 200, 300);
-    Serial.println(cutoff_freq);
     resonance = 255; // go nuts
     rf2.setCutoffFreqAndResonance(cutoff_freq, resonance);
     overdrive = 1.00+(float(potVal[6])-(float)500.0)/200.0;
@@ -496,7 +528,7 @@ void controlFX()
 
 void updateControl()
 {
-  Serial.println((int)fxType);
+  //Serial.println((int)arpType);
   controlFX();
   updateAllSpeeds();  
   processPotentiometers();
