@@ -551,7 +551,6 @@ void controlFX()
   {
     fxType = FxType::TREMOLO;
     vTremolo = kTremolo.next();
-    Serial.println((int)v[0]);
     return;
   }
   if(potVal[6] < potValueMax*4/(int)FxType::LENGTH)
@@ -663,7 +662,38 @@ AudioOutput_t updateAudio()
       aCos5.next()*v[5] +
       aCos6.next()*v[6] +
       aCos7.next()*v[7];
-    return MonoOutput::fromAlmostNBit(18, asig<<1).clip();
+
+    switch(fxType)
+    {
+      case FxType::FILTER:
+      {
+        int asig2 = (int)
+        ((long) rf.next(asig>>9));
+        return MonoOutput::fromAlmostNBit(9, asig2).clip();
+      }
+      case FxType::NONE:
+      {
+        return MonoOutput::fromAlmostNBit(18, asig<<1).clip();
+      }
+      case FxType::TREMOLO:
+      {
+        int asig2 = (int)
+        ((long) asig*vTremolo>>10)>>6;
+        return MonoOutput::fromAlmostNBit(9, asig2).clip();
+      }
+      case FxType::WARP:
+      {
+        Serial.println("warp");
+        int asig2 = (int)
+        ((long) asig>>12*kWarp.next())>>10;
+        return MonoOutput::fromAlmostNBit(9, asig2).clip();
+      }
+      case FxType::GLITCH:
+      {
+        Serial.println("glitch");
+        return MonoOutput::fromAlmostNBit(9,((int) (rf2.next(asig>>1)))).clip()>>2;
+      }
+    }
   }
 }
 
