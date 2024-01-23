@@ -52,9 +52,10 @@ unsigned int attack, decay, sustain, release_ms;
 // Multinote
 // audio volumes updated each control interrupt and reused in audio till next control
 #include <tables/cos8192_int8.h>
-char v0, v1,v2,v3,v4,v5,v6,v7;
-const int NUM_VOICES = 8;
-float multiNotes[NUM_VOICES];
+char v[N_FIDGET_SPINNERS];
+float multiNotes[N_FIDGET_SPINNERS];
+
+Oscil<COS8192_NUM_CELLS, AUDIO_RATE> aCos0(COS8192_DATA);
 Oscil<COS8192_NUM_CELLS, AUDIO_RATE> aCos1(COS8192_DATA);
 Oscil<COS8192_NUM_CELLS, AUDIO_RATE> aCos2(COS8192_DATA);
 Oscil<COS8192_NUM_CELLS, AUDIO_RATE> aCos3(COS8192_DATA);
@@ -62,7 +63,6 @@ Oscil<COS8192_NUM_CELLS, AUDIO_RATE> aCos4(COS8192_DATA);
 Oscil<COS8192_NUM_CELLS, AUDIO_RATE> aCos5(COS8192_DATA);
 Oscil<COS8192_NUM_CELLS, AUDIO_RATE> aCos6(COS8192_DATA);
 Oscil<COS8192_NUM_CELLS, AUDIO_RATE> aCos7(COS8192_DATA);
-Oscil<COS8192_NUM_CELLS, AUDIO_RATE> aCos0(COS8192_DATA);
 
 // Bamboo sound sampler
 #include <Sample.h> // Sample template
@@ -143,6 +143,7 @@ midier::Note nextArpNote()
       // calculate the root note of the chord of this scale degree
       const midier::Note chordRoot = scaleRoot + interval;
       scaleDegree++;
+      Serial.println(i);
       return chordRoot;
     }  
     scaleDegree++;
@@ -232,52 +233,113 @@ byte calcVariableArpSpeed()
 
 void prepareSound(SoundType mode)
 {
-  variableArpSpeed = calcVariableArpSpeed();
-  if (variableArpSpeed == 0)
+  if (arpType == ArpType::MULTI_NOTE)
   {
-    return;
-  }
+    Serial.println();
+    for(int i = 0; i < 8; i++)
+    {
+      v[i] = speed[i]*6;
+      
+      // determine the interval from the root of the scale to the chord of this scale degree
+      const midier::Interval interval = midier::scale::interval(arpMode, i+1);
+      
+      // calculate the root note of the chord of this scale degree
+      const midier::Note chordRoot = scaleRoot + interval;
+      
+      Serial.println((int)chordRoot);
+      midier::midi::Number midiNote = midier::midi::number(chordRoot, 4); //octave 4 seems good
 
-  if (mode==SoundType::SINE | mode==SoundType::TRIANGLE | mode==SoundType::SQUARE | mode==SoundType::SAW)
-  {
-    if((noteDelay.ready()))
-    {       
-      if (arpType == ArpType::UPWARDS)
+      switch(i)
       {
-        midier::Note note = nextArpNote();
-        midier::midi::Number midiNote = midier::midi::number(note, 4); //octave 4 seems good
-        aOscil.setFreq((float)mtof((int)midiNote)); // (float) cast IS needed, when using the int setFreq function it rounds a bunch of notes (12, 13, 14) all to playing at 12 somehow    
-      }
-      if(arpType == ArpType::SPEED_BASED)
-      {
-        byte midi_note = 75 + rand(-2, 2) + map(variableArpSpeed, 0, 20, -10, 10);
-        aOscil.setFreq((int)mtof(midi_note));
-      }
-      attack = 5;
-      decay = 50;
-      sustain = 50;
-      release_ms = noteTime - 30 - attack - decay-sustain; // 30 ms of transition time
-      //release_ms = 50;
-      byte attack_level = 255;
-      byte decay_level = 255;
-      envelope.setADLevels(attack_level,decay_level);
-      envelope.setTimes(attack,decay,sustain,release_ms);  
-      envelope.noteOn();
-      if(arpType == ArpType::UPWARDS)
-      {
-        noteDelay.start(noteTime);
-      }
-      if(arpType == ArpType::SPEED_BASED)
-      {
-        noteDelay.start(map(variableArpSpeed, 0, 20, 350, 30));
+        case(0):
+        {
+          aCos0.setFreq((float)mtof((int)midiNote));
+          break;
+        }
+        case(1):
+        {
+          aCos1.setFreq((float)mtof((int)midiNote));
+          break;
+        }
+        case(2):
+        {
+          aCos2.setFreq((float)mtof((int)midiNote));
+          break;
+        }
+        case(3):
+        {
+          aCos3.setFreq((float)mtof((int)midiNote));
+          break;
+        }
+        case(4):
+        {
+          aCos4.setFreq((float)mtof((int)midiNote));
+          break;
+        }
+        case(5):
+        {
+          aCos5.setFreq((float)mtof((int)midiNote));
+          break;
+        }
+        case(6):
+        {
+          aCos6.setFreq((float)mtof((int)midiNote));
+          break;
+        }
+        case(7):
+        {
+          aCos7.setFreq((float)mtof((int)midiNote));
+          break;
+        }
       }
     }
-    return;
   }
+  if (arpType == ArpType::SPEED_BASED | arpType == ArpType::UPWARDS)
+  {
+    variableArpSpeed = calcVariableArpSpeed();
+    if (variableArpSpeed == 0)
+    {
+      return;
+    }
 
-  switch (mode)
-  {  
-    case SoundType::BAMBOO:
+    if (mode==SoundType::SINE | mode==SoundType::TRIANGLE | mode==SoundType::SQUARE | mode==SoundType::SAW)
+    {
+      if((noteDelay.ready()))
+      {       
+        if (arpType == ArpType::UPWARDS)
+        {
+          midier::Note note = nextArpNote();
+          midier::midi::Number midiNote = midier::midi::number(note, 4); //octave 4 seems good
+          aOscil.setFreq((float)mtof((int)midiNote)); // (float) cast IS needed, when using the int setFreq function it rounds a bunch of notes (12, 13, 14) all to playing at 12 somehow    
+        }
+        if(arpType == ArpType::SPEED_BASED)
+        {
+          byte midi_note = 75 + rand(-2, 2) + map(variableArpSpeed, 0, 20, -10, 10);
+          aOscil.setFreq((int)mtof(midi_note));
+        }
+        attack = 5;
+        decay = 50;
+        sustain = 50;
+        release_ms = noteTime - 30 - attack - decay-sustain; // 30 ms of transition time
+        //release_ms = 50;
+        byte attack_level = 255;
+        byte decay_level = 255;
+        envelope.setADLevels(attack_level,decay_level);
+        envelope.setTimes(attack,decay,sustain,release_ms);  
+        envelope.noteOn();
+        if(arpType == ArpType::UPWARDS)
+        {
+          noteDelay.start(noteTime);
+        }
+        if(arpType == ArpType::SPEED_BASED)
+        {
+          noteDelay.start(map(variableArpSpeed, 0, 20, 350, 30));
+        }
+      }
+      return;
+    }
+  
+    if(mode == SoundType::BAMBOO)
     {
       if(kTriggerDelay.ready()){
         if(arpType == ArpType::UPWARDS)
@@ -305,13 +367,6 @@ void prepareSound(SoundType mode)
         aBamboo0.start();
         kTriggerDelay.start();
       }
-      break;
-    }
-
-    default:
-    {
-      Serial.println("Error: wrong soundtype.");
-      break;
     }
   }
 }
@@ -323,11 +378,6 @@ void setNewArpTime()
 
 void handlePotValChange(int pot)
 {
-  /*
-  Serial.println("change of parameter: ");
-  Serial.println(pot);
-  Serial.println(potVal[pot]);
-  */
   switch((KnobFunction)pot)
   {
     case KnobFunction::PITCH:
@@ -347,25 +397,6 @@ void handlePotValChange(int pot)
     case KnobFunction::ARPTYPE:
     {
       arpType = (ArpType)map(potVal[pot], 0, potValueMax+POT_HYSTERESIS, 0, (int)ArpType::LENGTH);
-      Serial.println("arpType: ");
-      Serial.println((int)arpType);
-      /*
-      switch(arpType)
-      { 
-        case ArpType::UPWARDS:
-        {
-          break;
-        }
-        case ArpType::MULTI_NOTE:
-        {
-          break;
-        }
-        case ArpType::SPEED_BASED:
-        {
-          break;
-        }
-        
-      }*/
       break;
     }
 
@@ -528,7 +559,6 @@ void controlFX()
 
 void updateControl()
 {
-  //Serial.println((int)arpType);
   controlFX();
   updateAllSpeeds();  
   processPotentiometers();
@@ -538,61 +568,78 @@ void updateControl()
 
 AudioOutput_t updateAudio()
 {
-  if(soundType==SoundType::SINE | soundType==SoundType::TRIANGLE | soundType==SoundType::SQUARE | soundType==SoundType::SAW)
+
+  if(arpType == ArpType::UPWARDS | arpType == ArpType::SPEED_BASED)
   {
-    envelope.update();
-    switch(fxType)
+    if(soundType==SoundType::SINE | soundType==SoundType::TRIANGLE | soundType==SoundType::SQUARE | soundType==SoundType::SAW)
     {
-      case FxType::FILTER:
-      {
-        return MonoOutput::from16Bit((int) (envelope.next() * rf.next(aOscil.next()>>1)));
-      }
-      case FxType::NONE:
-      {
-        return MonoOutput::from16Bit((int) (envelope.next() * aOscil.next()));
-      }
-      case FxType::DISTORTION:
-      {
-        return MonoOutput::fromAlmostNBit(9,((int) (envelope.next() * rf2.next(aOscil.next()>>1))))<<2;
-      }
-      case FxType::GLITCH:
-      {
-        return MonoOutput::fromAlmostNBit(9,((int) (envelope.next() * rf2.next(aOscil.next()>>1)))).clip();
-      }
-    }
-  }
-  switch(soundType)
-  {
-    case SoundType::BAMBOO:
-    {
+      envelope.update();
       switch(fxType)
       {
         case FxType::FILTER:
         {
-          int asig = (int)
-          ((long) rf.next(aBamboo0.next()>>1)*gains.gain0)>>4;
-          return MonoOutput::fromAlmostNBit(9, asig).clip();
+          return MonoOutput::from16Bit((int) (envelope.next() * rf.next(aOscil.next()>>1)));
         }
         case FxType::NONE:
         {
-          int asig = (int)
-          ((long) aBamboo0.next()*gains.gain0)>>4;
-          return MonoOutput::fromAlmostNBit(9, asig).clip();
+          return MonoOutput::from16Bit((int) (envelope.next() * aOscil.next()));
         }
         case FxType::DISTORTION:
         {
-          int asig = (int)
-          ((long) aBamboo0.next()*gains.gain0)>>4;
-          return MonoOutput::fromAlmostNBit(9, asig)>>2;
+          return MonoOutput::fromAlmostNBit(9,((int) (envelope.next() * rf2.next(aOscil.next()>>1))))<<2;
         }
         case FxType::GLITCH:
         {
-          int asig = (int)
-          ((long) 8.0 * overdrive *aBamboo0.next()*gains.gain0)>>6;
-          return MonoOutput::fromAlmostNBit(9, asig).clip();
+          return MonoOutput::fromAlmostNBit(9,((int) (envelope.next() * rf2.next(aOscil.next()>>1)))).clip();
         }
       }
     }
+    switch(soundType)
+    {
+      case SoundType::BAMBOO:
+      {
+        switch(fxType)
+        {
+          case FxType::FILTER:
+          {
+            int asig = (int)
+            ((long) rf.next(aBamboo0.next()>>1)*gains.gain0)>>4;
+            return MonoOutput::fromAlmostNBit(9, asig).clip();
+          }
+          case FxType::NONE:
+          {
+            int asig = (int)
+            ((long) aBamboo0.next()*gains.gain0)>>4;
+            return MonoOutput::fromAlmostNBit(9, asig).clip();
+          }
+          case FxType::DISTORTION:
+          {
+            int asig = (int)
+            ((long) aBamboo0.next()*gains.gain0)>>4;
+            return MonoOutput::fromAlmostNBit(9, asig)>>2;
+          }
+          case FxType::GLITCH:
+          {
+            int asig = (int)
+            ((long) 8.0 * overdrive *aBamboo0.next()*gains.gain0)>>6;
+            return MonoOutput::fromAlmostNBit(9, asig).clip();
+          }
+        }
+      }
+    }
+  }
+  if(arpType == ArpType::MULTI_NOTE)
+  {
+    long asig = (long)
+      aCos0.next()*v[0] +
+      aCos1.next()*v[1] +
+      aCos2.next()*v[2] +
+      aCos3.next()*v[3] +
+      aCos4.next()*v[4] +
+      aCos5.next()*v[5] +
+      aCos6.next()*v[6] +
+      aCos7.next()*v[7];
+    return MonoOutput::fromAlmostNBit(18, asig<<1);
   }
 }
 
