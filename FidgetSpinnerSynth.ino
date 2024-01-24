@@ -37,7 +37,9 @@ int ccChannelPotentiometers = 2;
 int ccChannelNotes = 3;
 int ccOffset = 14; // Start at control 14, others are usually for something else.
 int middleOctave = 4; // Octave to play around on speaker and midi notes to send
-int midiNote;
+int lastMidiNote;
+byte highestMidiValue = 127;
+
 
 // Wavetable synth
 #include <Oscil.h>
@@ -57,6 +59,9 @@ unsigned int attack, decay, sustain, release_ms;
 #include <tables/cos8192_int8.h>
 char v[N_FIDGET_SPINNERS];
 float multiNotes[N_FIDGET_SPINNERS];
+const int maxNotesPlaying = 100;
+int notesPlaying[maxNotesPlaying]; // these are kept for multi-note. If you switch pitch or scales you want all playing notes to end, so we must bookkeep what is playing
+int notesPlayingIndex = 0;
 
 Oscil<SQUARE_ANALOGUE512_NUM_CELLS, AUDIO_RATE> aCos0(SQUARE_ANALOGUE512_DATA);
 Oscil<SQUARE_ANALOGUE512_NUM_CELLS, AUDIO_RATE> aCos1(SQUARE_ANALOGUE512_DATA);
@@ -110,6 +115,7 @@ long speedCalcCount;
 long counts[N_FIDGET_SPINNERS];
 bool prevState[N_FIDGET_SPINNERS];
 bool state[N_FIDGET_SPINNERS];
+byte prevSpeed[N_FIDGET_SPINNERS]; // last state of fidget spinner speed
 byte speed[N_FIDGET_SPINNERS]; // rotations per second of the spinner
 byte maxSpeed = 20; // rotations per second
 int variableArpSpeed = 0;
@@ -129,23 +135,31 @@ void setup(){
 }
 
 void sendCC(uint8_t channel, uint8_t control, uint8_t value) {
-	USBMIDI.write(0xB0 | (channel & 0xf));
-	USBMIDI.write(control & 0x7f);
-	USBMIDI.write(value & 0x7f);
-  /*
+	//USBMIDI.write(0xB0 | (channel & 0xf));
+	//USBMIDI.write(control & 0x7f);
+	//USBMIDI.write(value & 0x7f);
+
   Serial.print("Midi channel: ");
   Serial.println((int)channel);
   Serial.print("Midi control: ");
   Serial.println((int)control);
   Serial.print("Midi value: ");
   Serial.println((int)value);
-  */
+
 }
 
 void sendNote(uint8_t channel, uint8_t note, uint8_t velocity) {
 	USBMIDI.write((velocity != 0 ? 0x90 : 0x80) | (channel & 0xf));
 	USBMIDI.write(note & 0x7f);
 	USBMIDI.write(velocity &0x7f);
+/*
+  Serial.print("Midi channel: ");
+  Serial.println((int)channel);
+  Serial.print("Midi note: ");
+  Serial.println((int)note);
+  Serial.print("Midi velocity: ");
+  Serial.println((int)velocity);
+  */
 }
 
 midier::Note nextArpNote()
@@ -165,15 +179,25 @@ midier::Note nextArpNote()
       const midier::Note chordRoot = scaleRoot + interval;
 
       // midi: end last note
-      sendNote(ccChannelNotes, midiNote, 0);
+      stopMidiNote(lastMidiNote);
       // midi: update and start new note
-      midiNote = (int)midier::midi::number(chordRoot, middleOctave);
-      sendNote(ccChannelNotes, midiNote, map(speed[scaleDegree-1], 0, maxSpeed, 0, 127));
+      lastMidiNote = (int)midier::midi::number(chordRoot, middleOctave);
+      sendNote(ccChannelNotes, lastMidiNote, map(speed[scaleDegree-1], 0, maxSpeed, 0, highestMidiValue));
       scaleDegree++;
       return chordRoot;
     }  
     scaleDegree++;
   }
+}
+
+void stopAllPlayingMidiNotes()
+{
+  //Serial.println("stopping all notes");
+  for(int i = 0; i < 10; i++)
+  {
+    stopMidiNote(notesPlaying[i]);
+  }
+  notesPlayingIndex = 0;
 }
 
 
@@ -208,6 +232,7 @@ void updateAllSpeeds()
     {
       speed[i] = byte((float)counts[i] / (float)PULSES_PER_REVOLUTION / ((float)SPEED_CALC_DIVIDER*((float)CONTROL_RATE_MS/1000.0)));
       if (speed[i] > maxSpeed) {speed[i] = maxSpeed;}
+
     }
     memset(counts,0,sizeof(counts)); // set all counts back to zero
     speedCalcCount = 0;
@@ -257,6 +282,13 @@ byte calcVariableArpSpeed()
   return sum;  
 }
 
+void stopMidiNote(int midiNote)
+{
+  sendNote(ccChannelNotes, midiNote, 0);
+}
+
+
+
 void prepareSound(SoundType mode)
 {
   if (arpType == ArpType::MULTI_NOTE)
@@ -272,6 +304,17 @@ void prepareSound(SoundType mode)
       const midier::Note chordRoot = scaleRoot + interval;
 
       midier::midi::Number midiNote = midier::midi::number(chordRoot, middleOctave);
+      if(prevSpeed[i] > 0 & speed[i] == 0)
+      {
+        sendNote(ccChannelNotes, (int)midiNote, 0);
+      }
+      if(prevSpeed[i] == 0 & speed[i] > 0)
+      {
+        sendNote(ccChannelNotes, (int)midiNote, 127);// map(speed[i], 0, maxSpeed, 0, highestMidiValue));
+        notesPlaying[notesPlayingIndex] = (int) midiNote; // keep track of which notes are playing
+        notesPlayingIndex++;
+      }
+      prevSpeed[i] = speed[i];
 
       switch(i)
       {
@@ -324,7 +367,7 @@ void prepareSound(SoundType mode)
     if (variableArpSpeed == 0)
     {
       // stop last midi note from playing
-      sendNote(ccChannelNotes, midiNote, 0);
+      stopMidiNote(lastMidiNote);
       return;
     }
 
@@ -411,6 +454,7 @@ void handlePotValChange(int pot)
       scaleRoot = midier::Note::C;
       int semiTonesToAdd = map(potVal[pot], 0, potValueMax+POT_HYSTERESIS, 0, 12);
       scaleRoot = (midier::Note)((int)scaleRoot + semiTonesToAdd);
+      stopAllPlayingMidiNotes();
       break;
     }
     case KnobFunction::MODE:
@@ -418,11 +462,13 @@ void handlePotValChange(int pot)
       arpMode = (midier::Mode) 0;
       int arpModeStepsToAdd = map(potVal[pot], 0, potValueMax+POT_HYSTERESIS, 0, (int)midier::Mode::Count);
       arpMode = (midier::Mode)((int)arpMode + arpModeStepsToAdd);
+      stopAllPlayingMidiNotes();
       break;
     }
     case KnobFunction::ARPTYPE:
     {
       arpType = (ArpType)map(potVal[pot], 0, potValueMax+POT_HYSTERESIS, 0, (int)ArpType::LENGTH);
+      stopAllPlayingMidiNotes();
       break;
     }
 
@@ -533,7 +579,7 @@ void sendMidiStates()
   int value;
   for(int i = 0; i < N_FIDGET_SPINNERS; i++)
   {
-    value = map(speed[i], 0, maxSpeed, 0, 127);
+    value = map(speed[i], 0, maxSpeed, 0, highestMidiValue);
     if (ccValuesSpinners[i] != value) 
     {
       sendCC(ccChannelSpinners, i+ccOffset, value);
@@ -543,7 +589,7 @@ void sendMidiStates()
 
   for(int i = 0; i < N_POTENTIOMETERS; i++)
   {
-    value = map(potVal[i], 0, 1023, 0, 127);
+    value = map(potVal[i], 0, 1023, 0, highestMidiValue);
     if (ccValuesPotentiometers[i] != value) 
     {
       sendCC(ccChannelPotentiometers, i+ccOffset, value);
