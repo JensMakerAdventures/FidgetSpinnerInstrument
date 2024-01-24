@@ -18,7 +18,7 @@ const int CONTROL_RATE_HZ = 128; // 128 Hz, so 15.6 ms is needed to get  max fid
 const float CONTROL_RATE_MS = 1.0/CONTROL_RATE_HZ*1000.0;
 const int SPEED_CALC_DIVIDER = 25;
 const int POT_CALC_DIVIDER = 4;
-const int POT_HYSTERESIS = 10;
+const int POT_HYSTERESIS = 30; // in the first make, a value of 10 worked for 6/7 pots, but increased to 30 for that last pot
 const int PULSES_PER_REVOLUTION = 3;
 const int lowBPM = 60;
 const int highBPM = 180;
@@ -145,7 +145,6 @@ void sendCC(uint8_t channel, uint8_t control, uint8_t value) {
   Serial.println((int)control);
   Serial.print("Midi value: ");
   Serial.println((int)value);
-
 }
 
 void sendNote(uint8_t channel, uint8_t note, uint8_t velocity) {
@@ -192,7 +191,6 @@ midier::Note nextArpNote()
 
 void stopAllPlayingMidiNotes()
 {
-  //Serial.println("stopping all notes");
   for(int i = 0; i < 10; i++)
   {
     stopMidiNote(notesPlaying[i]);
@@ -646,6 +644,7 @@ void updateControl()
   updateAllSpeeds();  
   processPotentiometers();
   sendMidiStates();
+  //Serial.println(mozziAnalogRead(POTENTIOMETER_PINS[6]));
 }
 
 AudioOutput_t updateAudio()
