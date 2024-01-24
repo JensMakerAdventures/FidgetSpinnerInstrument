@@ -60,8 +60,7 @@ unsigned int attack, decay, sustain, release_ms;
 char v[N_FIDGET_SPINNERS];
 float multiNotes[N_FIDGET_SPINNERS];
 const int maxNotesPlaying = 100;
-int notesPlaying[maxNotesPlaying]; // these are kept for multi-note. If you switch pitch or scales you want all playing notes to end, so we must bookkeep what is playing
-int notesPlayingIndex = 0;
+int notesPlaying[N_FIDGET_SPINNERS]; // these are kept for multi-note. If you switch pitch or scales you want all playing notes to end, so we must bookkeep what is playing
 
 Oscil<SQUARE_ANALOGUE512_NUM_CELLS, AUDIO_RATE> aCos0(SQUARE_ANALOGUE512_DATA);
 Oscil<SQUARE_ANALOGUE512_NUM_CELLS, AUDIO_RATE> aCos1(SQUARE_ANALOGUE512_DATA);
@@ -192,11 +191,10 @@ midier::Note nextArpNote()
 
 void stopAllPlayingMidiNotes()
 {
-  for(int i = 0; i < 10; i++)
+  for(int i = 0; i < N_FIDGET_SPINNERS; i++)
   {
     stopMidiNote(notesPlaying[i]);
   }
-  notesPlayingIndex = 0;
 }
 
 
@@ -309,9 +307,8 @@ void prepareSound(SoundType mode)
       }
       if(prevSpeed[i] == 0 & speed[i] > 0)
       {
-        sendNote(ccChannelNotes, (int)midiNote, 127);// map(speed[i], 0, maxSpeed, 0, highestMidiValue));
-        notesPlaying[notesPlayingIndex] = (int) midiNote; // keep track of which notes are playing
-        notesPlayingIndex++;
+        sendNote(ccChannelNotes, (int)midiNote, 127);
+        notesPlaying[i] = (int)midiNote; // keep track of which notes are playing so we can stop them if modes changes
       }
       prevSpeed[i] = speed[i];
 
@@ -446,7 +443,6 @@ void setNewArpTime()
 
 void handlePotValChange(int pot)
 {
-  Serial.println(potVal[pot]);
   switch((KnobFunction)pot)
   {
     case KnobFunction::PITCH:
@@ -646,7 +642,6 @@ void updateControl()
   updateAllSpeeds();  
   processPotentiometers();
   sendMidiStates();
-  //Serial.println(mozziAnalogRead(POTENTIOMETER_PINS[6]));
 }
 
 AudioOutput_t updateAudio()
