@@ -129,8 +129,12 @@ void sendCC(uint8_t channel, uint8_t control, uint8_t value) {
 	USBMIDI.write(0xB0 | (channel & 0xf));
 	USBMIDI.write(control & 0x7f);
 	USBMIDI.write(value & 0x7f);
-  //Serial.println("MIDI update sent." + (int)value);
-  //Serial.println((int)value);
+  Serial.print("Midi channel: ");
+  Serial.println((int)channel);
+  Serial.print("Midi control: ");
+  Serial.println((int)control);
+  Serial.print("Midi value: ");
+  Serial.println((int)value);
 }
 
 void sendNote(uint8_t channel, uint8_t note, uint8_t velocity) {
@@ -533,6 +537,10 @@ void sendMidiStates()
       ccValuesPotentiometers[i] = value;
     }
   }
+  //Handle USB communication
+  USBMIDI.poll();
+  // Flush the output.
+	USBMIDI.flush();
 }
 float overdrive;
 void controlFX()
@@ -574,12 +582,14 @@ void controlFX()
 
 void updateControl()
 {
+  /*
   controlFX();
+
+  prepareSound(soundType);
+  */
   updateAllSpeeds();  
   processPotentiometers();
-  prepareSound(soundType);
   sendMidiStates();
-
 }
 
 AudioOutput_t updateAudio()
