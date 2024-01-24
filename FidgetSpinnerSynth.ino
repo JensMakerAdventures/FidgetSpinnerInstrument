@@ -361,8 +361,8 @@ void prepareSound(SoundType mode)
         if (arpType == ArpType::UPWARDS)
         {
           midier::Note note = nextArpNote();
-          midiNote = midier::midi::number(note, 2) + 6; // prescale 2 octaves up, mtof makes mistakes in lower ranges. Offset 5 necessary to be in tune with synths.
-          aBamboo0.setFreq((float)mtof((int)midiNote)/8); // (float) cast IS needed, when using the int setFreq function it rounds a bunch of notes (12, 13, 14) all to playing at 12 somehow. scale down earlier scale up
+          midiNote = midier::midi::number(note, 2) + 6; // prescale 2 octaves up, mtof makes mistakes in lower ranges. Offset 6 necessary to be in tune with synths.
+          aBamboo0.setFreq((float)(mtof((int)midiNote)/8.0*0.98)); // (float) cast IS needed, when using the int setFreq function it rounds a bunch of notes (12, 13, 14) all to playing at 12 somehow. scale down earlier scale up. 0.98 multiplier is for fine tuning to other synths
         }
         if(arpType == ArpType::SPEED_BASED)
         {
@@ -607,7 +607,7 @@ AudioOutput_t updateAudio()
         }
         case FxType::GLITCH:
         {
-          return MonoOutput::fromAlmostNBit(9,((int) (envelope.next() * rf2.next(aOscil.next()>>1)))).clip()>>2;
+          return MonoOutput::fromAlmostNBit(9,((int) (envelope.next() * rf2.next(aOscil.next()>>1)))).clip()>>3;
         }
       }
     }
@@ -632,7 +632,7 @@ AudioOutput_t updateAudio()
           case FxType::TREMOLO:
           {
             int asig = (int)
-            ((long) aBamboo0.next()*gains.gain0*vTremolo>>4)>>6;
+            ((long) aBamboo0.next()*gains.gain0*vTremolo>>4)>>7;
             return MonoOutput::fromAlmostNBit(9, asig).clip();
           }
           case FxType::WARP:
@@ -645,7 +645,7 @@ AudioOutput_t updateAudio()
           {
             int asig = (int)
             ((long) 8.0 * overdrive *aBamboo0.next()*gains.gain0)>>6;
-            return MonoOutput::fromAlmostNBit(9, asig).clip();
+            return MonoOutput::fromAlmostNBit(9, asig).clip()>>1;
           }
         }
       }
