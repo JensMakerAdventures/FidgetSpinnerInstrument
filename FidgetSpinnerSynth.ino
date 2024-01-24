@@ -32,8 +32,8 @@ const int potValueMax = 1023;
 #include <usbmidi.h>
 int ccValuesSpinners[N_FIDGET_SPINNERS];
 int ccValuesPotentiometers[N_POTENTIOMETERS];
-int ccChannelSpinners = 0;
-int ccChannelPotentiometers = 1;
+int ccChannelSpinners = 1;
+int ccChannelPotentiometers = 2;
 int ccOffset = 14; // Start at control 14, others are usually for something else.
 
 // Wavetable synth
@@ -108,6 +108,7 @@ long counts[N_FIDGET_SPINNERS];
 bool prevState[N_FIDGET_SPINNERS];
 bool state[N_FIDGET_SPINNERS];
 byte speed[N_FIDGET_SPINNERS]; // rotations per second of the spinner
+byte max_speed = 20; // rotations per second
 int variableArpSpeed = 0;
 
 void setup(){
@@ -128,6 +129,8 @@ void sendCC(uint8_t channel, uint8_t control, uint8_t value) {
 	USBMIDI.write(0xB0 | (channel & 0xf));
 	USBMIDI.write(control & 0x7f);
 	USBMIDI.write(value & 0x7f);
+  //Serial.println("MIDI update sent." + (int)value);
+  //Serial.println((int)value);
 }
 
 void sendNote(uint8_t channel, uint8_t note, uint8_t velocity) {
@@ -189,7 +192,7 @@ void updateAllSpeeds()
     for(int i = 0; i < N_FIDGET_SPINNERS; i++)
     {
       speed[i] = byte((float)counts[i] / (float)PULSES_PER_REVOLUTION / ((float)SPEED_CALC_DIVIDER*((float)CONTROL_RATE_MS/1000.0)));
-      if (speed[i] > 20) {speed[i] = 20;}
+      if (speed[i] > max_speed) {speed[i] = max_speed;}
     }
     memset(counts,0,sizeof(counts)); // set all counts back to zero
     speedCalcCount = 0;
@@ -224,9 +227,9 @@ byte calcVariableArpSpeed()
     }
   }
 
-  if (sum > 20)
+  if (sum > max_speed)
   {
-    sum = 20;
+    sum = max_speed;
   }
   if(nonZeroEntries != 0)
    {
@@ -320,7 +323,7 @@ void prepareSound(SoundType mode)
         }
         if(arpType == ArpType::SPEED_BASED)
         {
-          byte midi_note = 75 + rand(-2, 2) + map(variableArpSpeed, 0, 20, -10, 10);
+          byte midi_note = 75 + rand(-2, 2) + map(variableArpSpeed, 0, max_speed, -10, 10);
           aOscil.setFreq((int)mtof(midi_note));
         }
         attack = 5;
@@ -339,7 +342,7 @@ void prepareSound(SoundType mode)
         }
         if(arpType == ArpType::SPEED_BASED)
         {
-          noteDelay.start(map(variableArpSpeed, 0, 20, 350, 30));
+          noteDelay.start(map(variableArpSpeed, 0, max_speed, 350, 30));
         }
       }
       return;
@@ -354,7 +357,7 @@ void prepareSound(SoundType mode)
         }
         if(arpType == ArpType::SPEED_BASED)
         {
-          kTriggerDelay.set(map(variableArpSpeed, 0, 20, 500, 30));
+          kTriggerDelay.set(map(variableArpSpeed, 0, max_speed, 500, 30));
         }
         
         midier::midi::Number midiNote;
@@ -366,7 +369,7 @@ void prepareSound(SoundType mode)
         }
         if(arpType == ArpType::SPEED_BASED)
         {
-          float pitchChange = mapFloat((float)variableArpSpeed, 0.0, 20.0, 0.8, 1.5);
+          float pitchChange = mapFloat((float)variableArpSpeed, 0.0, (float)max_speed, 0.8, 1.5);
           aBamboo0.setFreq((float) BAMBOO_00_2048_SAMPLERATE / (float) (BAMBOO_00_2048_NUM_CELLS)*pitchChange);
         }
         gains.gain0 = randomGain();
@@ -513,7 +516,7 @@ void sendMidiStates()
   int value;
   for(int i = 0; i < N_FIDGET_SPINNERS; i++)
   {
-    value = speed[i];
+    value = map(speed[i], 0, max_speed, 0, 127);
     if (ccValuesSpinners[i] != value) 
     {
       sendCC(ccChannelSpinners, i+ccOffset, value);
@@ -523,7 +526,7 @@ void sendMidiStates()
 
   for(int i = 0; i < N_POTENTIOMETERS; i++)
   {
-    value = potVal[i];
+    value = map(potVal[i], 0, 1023, 0, 127);
     if (ccValuesPotentiometers[i] != value) 
     {
       sendCC(ccChannelPotentiometers, i+ccOffset, value);
@@ -683,14 +686,12 @@ AudioOutput_t updateAudio()
       }
       case FxType::WARP:
       {
-        Serial.println("warp");
         int asig2 = (int)
         ((long) asig>>12*kWarp.next())>>10;
         return MonoOutput::fromAlmostNBit(9, asig2).clip();
       }
       case FxType::GLITCH:
       {
-        Serial.println("glitch");
         return MonoOutput::fromAlmostNBit(9,((int) (rf2.next(asig>>1)))).clip()>>2;
       }
     }
