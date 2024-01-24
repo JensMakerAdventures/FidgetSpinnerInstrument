@@ -10,7 +10,7 @@ const int N_FIDGET_SPINNERS = 8;
 const int ENCODER_PINS[N_FIDGET_SPINNERS] = {2,3,5,7,14,15,16,10};
 const int N_POTENTIOMETERS = 7;
 const int POTENTIOMETER_PINS[N_POTENTIOMETERS] = {A0, A1, A2, A3, A6, A7, A8}; // pay attention here, the order is linked to KnobFunction order!
-enum class KnobFunction {PITCH, TEMPO, MODE, ARPTYPE, SOUNDTYPE, RHYTHM, EFFECT, LENGTH};
+enum class KnobFunction {PITCH, MODE, TEMPO, RHYTHM, PLAYSTYLE, SOUNDTYPE, EFFECT, LENGTH};
 bool potMetersAreInverted = true;
 
 // SOFTWARE CONFIG, DON'T TOUCH
@@ -98,8 +98,8 @@ Oscil<COS8192_NUM_CELLS, CONTROL_RATE> kTremolo(COS8192_DATA);
 char vTremolo;
 
 //Arp
-enum class ArpType {UPWARDS, MULTI_NOTE, SPEED_BASED, LENGTH};
-ArpType arpType;
+enum class PlayStyle {UPWARDS, MULTI_NOTE, SPEED_BASED, LENGTH};
+PlayStyle playStyle;
 midier::Degree scaleDegree = 1; // counter for the arp
 midier::Mode arpMode = midier::Mode::Ionian; // KNOB
 midier::Note scaleRoot = midier::Note::G; // KNOB
@@ -138,13 +138,14 @@ void sendCC(uint8_t channel, uint8_t control, uint8_t value) {
 	//USBMIDI.write(0xB0 | (channel & 0xf));
 	//USBMIDI.write(control & 0x7f);
 	//USBMIDI.write(value & 0x7f);
-
+/*
   Serial.print("Midi channel: ");
   Serial.println((int)channel);
   Serial.print("Midi control: ");
   Serial.println((int)control);
   Serial.print("Midi value: ");
   Serial.println((int)value);
+*/
 }
 
 void sendNote(uint8_t channel, uint8_t note, uint8_t velocity) {
@@ -289,7 +290,7 @@ void stopMidiNote(int midiNote)
 
 void prepareSound(SoundType mode)
 {
-  if (arpType == ArpType::MULTI_NOTE)
+  if (playStyle == PlayStyle::MULTI_NOTE)
   {
     for(int i = 0; i < 8; i++)
     {
@@ -359,7 +360,7 @@ void prepareSound(SoundType mode)
       }
     }
   }
-  if (arpType == ArpType::SPEED_BASED | arpType == ArpType::UPWARDS)
+  if (playStyle == PlayStyle::SPEED_BASED | playStyle == PlayStyle::UPWARDS)
   {
     variableArpSpeed = calcVariableArpSpeed();
     if (variableArpSpeed == 0)
@@ -373,13 +374,13 @@ void prepareSound(SoundType mode)
     {
       if((noteDelay.ready()))
       {       
-        if (arpType == ArpType::UPWARDS)
+        if (playStyle == PlayStyle::UPWARDS)
         {
           midier::Note note = nextArpNote();
           midier::midi::Number midiNote = midier::midi::number(note, middleOctave);
           aOscil.setFreq((float)mtof((int)midiNote)); // (float) cast IS needed, when using the int setFreq function it rounds a bunch of notes (12, 13, 14) all to playing at 12 somehow    
         }
-        if(arpType == ArpType::SPEED_BASED)
+        if(playStyle == PlayStyle::SPEED_BASED)
         {
           byte midi_note = 75 + rand(-2, 2) + map(variableArpSpeed, 0, maxSpeed, -10, 10);
           aOscil.setFreq((int)mtof(midi_note));
@@ -394,11 +395,11 @@ void prepareSound(SoundType mode)
         envelope.setADLevels(attack_level,decay_level);
         envelope.setTimes(attack,decay,sustain,release_ms);  
         envelope.noteOn();
-        if(arpType == ArpType::UPWARDS)
+        if(playStyle == PlayStyle::UPWARDS)
         {
           noteDelay.start(noteTime);
         }
-        if(arpType == ArpType::SPEED_BASED)
+        if(playStyle == PlayStyle::SPEED_BASED)
         {
           noteDelay.start(map(variableArpSpeed, 0, maxSpeed, 350, 30));
         }
@@ -409,23 +410,23 @@ void prepareSound(SoundType mode)
     if(mode == SoundType::BAMBOO)
     {
       if(kTriggerDelay.ready()){
-        if(arpType == ArpType::UPWARDS)
+        if(playStyle == PlayStyle::UPWARDS)
         {
           kTriggerDelay.set(noteTime);
         }
-        if(arpType == ArpType::SPEED_BASED)
+        if(playStyle == PlayStyle::SPEED_BASED)
         {
           kTriggerDelay.set(map(variableArpSpeed, 0, maxSpeed, 500, 30));
         }
         
         midier::midi::Number midiNote;
-        if (arpType == ArpType::UPWARDS)
+        if (playStyle == PlayStyle::UPWARDS)
         {
           midier::Note note = nextArpNote();
           midiNote = midier::midi::number(note, 2) + 6; // prescale 2 octaves up, mtof makes mistakes in lower ranges. Offset 6 necessary to be in tune with synths.
           aBamboo0.setFreq((float)(mtof((int)midiNote)/8.0*0.98)); // (float) cast IS needed, when using the int setFreq function it rounds a bunch of notes (12, 13, 14) all to playing at 12 somehow. scale down earlier scale up. 0.98 multiplier is for fine tuning to other synths
         }
-        if(arpType == ArpType::SPEED_BASED)
+        if(playStyle == PlayStyle::SPEED_BASED)
         {
           float pitchChange = mapFloat((float)variableArpSpeed, 0.0, (float)maxSpeed, 0.8, 1.5);
           aBamboo0.setFreq((float) BAMBOO_00_2048_SAMPLERATE / (float) (BAMBOO_00_2048_NUM_CELLS)*pitchChange);
@@ -445,12 +446,13 @@ void setNewArpTime()
 
 void handlePotValChange(int pot)
 {
+  Serial.println(potVal[pot]);
   switch((KnobFunction)pot)
   {
     case KnobFunction::PITCH:
     {
       scaleRoot = midier::Note::C;
-      int semiTonesToAdd = map(potVal[pot], 0, potValueMax+POT_HYSTERESIS, 0, 12);
+      int semiTonesToAdd = map(potVal[pot], 0, potValueMax-POT_HYSTERESIS, 0, 12);
       scaleRoot = (midier::Note)((int)scaleRoot + semiTonesToAdd);
       stopAllPlayingMidiNotes();
       break;
@@ -458,21 +460,21 @@ void handlePotValChange(int pot)
     case KnobFunction::MODE:
     {
       arpMode = (midier::Mode) 0;
-      int arpModeStepsToAdd = map(potVal[pot], 0, potValueMax+POT_HYSTERESIS, 0, (int)midier::Mode::Count);
+      int arpModeStepsToAdd = map(potVal[pot], 0, potValueMax-POT_HYSTERESIS, 0, (int)midier::Mode::Count-1);
       arpMode = (midier::Mode)((int)arpMode + arpModeStepsToAdd);
       stopAllPlayingMidiNotes();
       break;
     }
-    case KnobFunction::ARPTYPE:
+    case KnobFunction::PLAYSTYLE:
     {
-      arpType = (ArpType)map(potVal[pot], 0, potValueMax+POT_HYSTERESIS, 0, (int)ArpType::LENGTH);
+      playStyle = (PlayStyle)map(potVal[pot], 0, potValueMax+POT_HYSTERESIS, 0, (int)PlayStyle::LENGTH);
       stopAllPlayingMidiNotes();
       break;
     }
 
     case KnobFunction::SOUNDTYPE:
     {
-      soundType = (SoundType)map(potVal[pot], 0, potValueMax+POT_HYSTERESIS, 0, (int)SoundType::LENGTH); 
+      soundType = (SoundType)map(potVal[pot], 0, potValueMax+POT_HYSTERESIS, 0, (int)SoundType::LENGTH);
       switch (soundType)
       {
         case SoundType::SAW:
@@ -650,7 +652,7 @@ void updateControl()
 AudioOutput_t updateAudio()
 {
 
-  if(arpType == ArpType::UPWARDS | arpType == ArpType::SPEED_BASED)
+  if(playStyle == PlayStyle::UPWARDS | playStyle == PlayStyle::SPEED_BASED)
   {
     if(soundType==SoundType::SINE | soundType==SoundType::TRIANGLE | soundType==SoundType::SQUARE | soundType==SoundType::SAW)
     {
@@ -719,7 +721,7 @@ AudioOutput_t updateAudio()
       }
     }
   }
-  if(arpType == ArpType::MULTI_NOTE)
+  if(playStyle == PlayStyle::MULTI_NOTE)
   {
     long asig = (long)
       aCos0.next()*v[0] +
