@@ -59,7 +59,6 @@ unsigned int attack, decay, sustain, release_ms;
 #include <tables/cos8192_int8.h>
 char v[N_FIDGET_SPINNERS];
 float multiNotes[N_FIDGET_SPINNERS];
-const int maxNotesPlaying = 100;
 int notesPlaying[N_FIDGET_SPINNERS]; // these are kept for multi-note. If you switch pitch or scales you want all playing notes to end, so we must bookkeep what is playing
 
 Oscil<SQUARE_ANALOGUE512_NUM_CELLS, AUDIO_RATE> aCos0(SQUARE_ANALOGUE512_DATA);
