@@ -37,6 +37,7 @@ int ccChannelPotentiometers = 2;
 int ccChannelNotes = 3;
 int ccOffset = 14; // Start at control 14, others are usually for something else.
 int middleOctave = 4; // Octave to play around on speaker and midi notes to send
+int midiNote;
 
 // Wavetable synth
 #include <Oscil.h>
@@ -161,8 +162,13 @@ midier::Note nextArpNote()
       const midier::Interval interval = midier::scale::interval(arpMode, scaleDegree);
       
       // calculate the root note of the chord of this scale degree
-      const midier::Note chordRoot = scaleRoot + interval;   
-      sendNote(ccChannelNotes, (int)midier::midi::number(chordRoot, middleOctave), map(speed[scaleDegree-1], 0, maxSpeed, 0, 127));
+      const midier::Note chordRoot = scaleRoot + interval;
+
+      // midi: end last note
+      sendNote(ccChannelNotes, midiNote, 0);
+      // midi: update and start new note
+      midiNote = (int)midier::midi::number(chordRoot, middleOctave);
+      sendNote(ccChannelNotes, midiNote, map(speed[scaleDegree-1], 0, maxSpeed, 0, 127));
       scaleDegree++;
       return chordRoot;
     }  
@@ -317,6 +323,8 @@ void prepareSound(SoundType mode)
     variableArpSpeed = calcVariableArpSpeed();
     if (variableArpSpeed == 0)
     {
+      // stop last midi note from playing
+      sendNote(ccChannelNotes, midiNote, 0);
       return;
     }
 
