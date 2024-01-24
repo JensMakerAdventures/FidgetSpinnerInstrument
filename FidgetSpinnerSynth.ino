@@ -34,7 +34,9 @@ int ccValuesSpinners[N_FIDGET_SPINNERS];
 int ccValuesPotentiometers[N_POTENTIOMETERS];
 int ccChannelSpinners = 1;
 int ccChannelPotentiometers = 2;
+int ccChannelNotes = 3;
 int ccOffset = 14; // Start at control 14, others are usually for something else.
+int middleOctave = 4; // Octave to play around on speaker and midi notes to send
 
 // Wavetable synth
 #include <Oscil.h>
@@ -108,7 +110,7 @@ long counts[N_FIDGET_SPINNERS];
 bool prevState[N_FIDGET_SPINNERS];
 bool state[N_FIDGET_SPINNERS];
 byte speed[N_FIDGET_SPINNERS]; // rotations per second of the spinner
-byte max_speed = 20; // rotations per second
+byte maxSpeed = 20; // rotations per second
 int variableArpSpeed = 0;
 
 void setup(){
@@ -129,12 +131,14 @@ void sendCC(uint8_t channel, uint8_t control, uint8_t value) {
 	USBMIDI.write(0xB0 | (channel & 0xf));
 	USBMIDI.write(control & 0x7f);
 	USBMIDI.write(value & 0x7f);
+  /*
   Serial.print("Midi channel: ");
   Serial.println((int)channel);
   Serial.print("Midi control: ");
   Serial.println((int)control);
   Serial.print("Midi value: ");
   Serial.println((int)value);
+  */
 }
 
 void sendNote(uint8_t channel, uint8_t note, uint8_t velocity) {
@@ -157,7 +161,8 @@ midier::Note nextArpNote()
       const midier::Interval interval = midier::scale::interval(arpMode, scaleDegree);
       
       // calculate the root note of the chord of this scale degree
-      const midier::Note chordRoot = scaleRoot + interval;
+      const midier::Note chordRoot = scaleRoot + interval;   
+      sendNote(ccChannelNotes, (int)midier::midi::number(chordRoot, middleOctave), map(speed[scaleDegree-1], 0, maxSpeed, 0, 127));
       scaleDegree++;
       return chordRoot;
     }  
@@ -196,7 +201,7 @@ void updateAllSpeeds()
     for(int i = 0; i < N_FIDGET_SPINNERS; i++)
     {
       speed[i] = byte((float)counts[i] / (float)PULSES_PER_REVOLUTION / ((float)SPEED_CALC_DIVIDER*((float)CONTROL_RATE_MS/1000.0)));
-      if (speed[i] > max_speed) {speed[i] = max_speed;}
+      if (speed[i] > maxSpeed) {speed[i] = maxSpeed;}
     }
     memset(counts,0,sizeof(counts)); // set all counts back to zero
     speedCalcCount = 0;
@@ -231,9 +236,9 @@ byte calcVariableArpSpeed()
     }
   }
 
-  if (sum > max_speed)
+  if (sum > maxSpeed)
   {
-    sum = max_speed;
+    sum = maxSpeed;
   }
   if(nonZeroEntries != 0)
    {
@@ -260,7 +265,7 @@ void prepareSound(SoundType mode)
       // calculate the root note of the chord of this scale degree
       const midier::Note chordRoot = scaleRoot + interval;
 
-      midier::midi::Number midiNote = midier::midi::number(chordRoot, 4); //octave 4 seems good
+      midier::midi::Number midiNote = midier::midi::number(chordRoot, middleOctave);
 
       switch(i)
       {
@@ -322,12 +327,12 @@ void prepareSound(SoundType mode)
         if (arpType == ArpType::UPWARDS)
         {
           midier::Note note = nextArpNote();
-          midier::midi::Number midiNote = midier::midi::number(note, 4); //octave 4 seems good
+          midier::midi::Number midiNote = midier::midi::number(note, middleOctave);
           aOscil.setFreq((float)mtof((int)midiNote)); // (float) cast IS needed, when using the int setFreq function it rounds a bunch of notes (12, 13, 14) all to playing at 12 somehow    
         }
         if(arpType == ArpType::SPEED_BASED)
         {
-          byte midi_note = 75 + rand(-2, 2) + map(variableArpSpeed, 0, max_speed, -10, 10);
+          byte midi_note = 75 + rand(-2, 2) + map(variableArpSpeed, 0, maxSpeed, -10, 10);
           aOscil.setFreq((int)mtof(midi_note));
         }
         attack = 5;
@@ -346,7 +351,7 @@ void prepareSound(SoundType mode)
         }
         if(arpType == ArpType::SPEED_BASED)
         {
-          noteDelay.start(map(variableArpSpeed, 0, max_speed, 350, 30));
+          noteDelay.start(map(variableArpSpeed, 0, maxSpeed, 350, 30));
         }
       }
       return;
@@ -361,7 +366,7 @@ void prepareSound(SoundType mode)
         }
         if(arpType == ArpType::SPEED_BASED)
         {
-          kTriggerDelay.set(map(variableArpSpeed, 0, max_speed, 500, 30));
+          kTriggerDelay.set(map(variableArpSpeed, 0, maxSpeed, 500, 30));
         }
         
         midier::midi::Number midiNote;
@@ -373,7 +378,7 @@ void prepareSound(SoundType mode)
         }
         if(arpType == ArpType::SPEED_BASED)
         {
-          float pitchChange = mapFloat((float)variableArpSpeed, 0.0, (float)max_speed, 0.8, 1.5);
+          float pitchChange = mapFloat((float)variableArpSpeed, 0.0, (float)maxSpeed, 0.8, 1.5);
           aBamboo0.setFreq((float) BAMBOO_00_2048_SAMPLERATE / (float) (BAMBOO_00_2048_NUM_CELLS)*pitchChange);
         }
         gains.gain0 = randomGain();
@@ -520,7 +525,7 @@ void sendMidiStates()
   int value;
   for(int i = 0; i < N_FIDGET_SPINNERS; i++)
   {
-    value = map(speed[i], 0, max_speed, 0, 127);
+    value = map(speed[i], 0, maxSpeed, 0, 127);
     if (ccValuesSpinners[i] != value) 
     {
       sendCC(ccChannelSpinners, i+ccOffset, value);
@@ -582,11 +587,8 @@ void controlFX()
 
 void updateControl()
 {
-  /*
   controlFX();
-
   prepareSound(soundType);
-  */
   updateAllSpeeds();  
   processPotentiometers();
   sendMidiStates();
