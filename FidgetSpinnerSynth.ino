@@ -40,7 +40,6 @@ int middleOctave = 4; // Octave to play around on speaker and midi notes to send
 int lastMidiNote;
 byte highestMidiValue = 127;
 
-
 // Wavetable synth
 #include <Oscil.h>
 #include <ADSR.h>
@@ -116,10 +115,11 @@ bool state[N_FIDGET_SPINNERS];
 byte prevSpeed[N_FIDGET_SPINNERS]; // last state of fidget spinner speed
 byte speed[N_FIDGET_SPINNERS]; // rotations per second of the spinner
 byte maxSpeed = 20; // rotations per second
+int prevVariableArpSpeed = 0;
 int variableArpSpeed = 0;
 
 void setup(){
-  startMozzi(CONTROL_RATE_HZ); // Run in 64 Hz => 15.6 ms cycle time for encoders.
+  startMozzi(CONTROL_RATE_HZ); // Run in 128 Hz => 8 ms cycle time for encoders.
   for(int i = 0; i < N_FIDGET_SPINNERS; i++)
   {
     pinMode(ENCODER_PINS[i], INPUT);
@@ -133,9 +133,9 @@ void setup(){
 }
 
 void sendCC(uint8_t channel, uint8_t control, uint8_t value) {
-	//USBMIDI.write(0xB0 | (channel & 0xf));
-	//USBMIDI.write(control & 0x7f);
-	//USBMIDI.write(value & 0x7f);
+	USBMIDI.write(0xB0 | (channel & 0xf));
+	USBMIDI.write(control & 0x7f);
+	USBMIDI.write(value & 0x7f);
 /*
   Serial.print("Midi channel: ");
   Serial.println((int)channel);
@@ -178,6 +178,7 @@ midier::Note nextArpNote()
 
       // midi: end last note
       stopMidiNote(lastMidiNote);
+      
       // midi: update and start new note
       lastMidiNote = (int)midier::midi::number(chordRoot, middleOctave);
       sendNote(ccChannelNotes, lastMidiNote, map(speed[scaleDegree-1], 0, maxSpeed, 0, highestMidiValue));
@@ -192,6 +193,7 @@ void stopAllPlayingMidiNotes()
 {
   for(int i = 0; i < N_FIDGET_SPINNERS; i++)
   {
+    
     stopMidiNote(notesPlaying[i]);
   }
 }
@@ -280,6 +282,7 @@ byte calcVariableArpSpeed()
 
 void stopMidiNote(int midiNote)
 {
+  
   sendNote(ccChannelNotes, midiNote, 0);
 }
 
@@ -362,9 +365,13 @@ void prepareSound(SoundType mode)
     if (variableArpSpeed == 0)
     {
       // stop last midi note from playing
-      stopMidiNote(lastMidiNote);
+      if(prevVariableArpSpeed != 0)
+      {
+        stopMidiNote(lastMidiNote);
+      }
       return;
     }
+    prevVariableArpSpeed = variableArpSpeed;
 
     if (mode==SoundType::SINE | mode==SoundType::TRIANGLE | mode==SoundType::SQUARE | mode==SoundType::SAW)
     {
@@ -569,7 +576,7 @@ void processPotentiometers()
   }
 }
 
-void sendMidiStates()
+void handleMIDICommunication()
 {
   int value;
   for(int i = 0; i < N_FIDGET_SPINNERS; i++)
@@ -593,6 +600,11 @@ void sendMidiStates()
   }
   //Handle USB communication
   USBMIDI.poll();
+  while (USBMIDI.available()) {
+		// We must read entire available data, so in case we receive incoming
+		// MIDI data, the host wouldn't get stuck.
+		u8 b = USBMIDI.read();
+	}
   // Flush the output.
 	USBMIDI.flush();
 }
@@ -640,7 +652,7 @@ void updateControl()
   prepareSound(soundType);
   updateAllSpeeds();  
   processPotentiometers();
-  sendMidiStates();
+  handleMIDICommunication();
 }
 
 AudioOutput_t updateAudio()
