@@ -7,7 +7,7 @@
 ![Electrical diagram](/FidgetSpinnerSynthV1_schem.png)
 
 ## CAD files
-
+https://www.thingiverse.com/thing:6460128
 
 ## Parts list
 - Fidget spinners Dutch craigslist €25,00 (48 pieces of which 8 were broken)
