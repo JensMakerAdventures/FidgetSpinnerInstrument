@@ -1,13 +1,15 @@
-![Fidget spinner instrument](/Thumbnail_V1.png)
-# YouTube video
+# Arduino fidget spinner instrument
 
-# Electrical Diagram
+![Fidget spinner instrument](/Thumbnail_V1.png)
+## YouTube video
+
+## Electrical Diagram
 ![Electrical diagram](/FidgetSpinnerSynthV1_schem.png)
 
-# CAD files
+## CAD files
 
 
-# Parts list
+## Parts list
 - Fidget spinners Dutch craigslist €25,00 (48 pieces of which 8 were broken)
 
 - Potmeter cables: 10PCS 2.54MM 30CM 300MM Dupont Line Single Female 2P 3 4 5 6 7 8 9 10 12 Pin connector JUMPER CABLE WIRE FOR PCB Diy for Arduino - Single Female 3P €4,09
@@ -43,8 +45,7 @@ https://www.aliexpress.com/item/1005005862432855.html
 - 10PCS 2.54MM Pitch Wire Dupont Line Female to Female 1P2 3 4 5 6 Pin Dupont cable connector JUMPER CABLE WIRE FOR PCB 3D Printer - Package: Lengh 20CM - Pins: 3Pin €4,50 (10 pieces)
 https://www.aliexpress.com/item/1005003638697583.html
 
-- Uni-Fine Elastic Buffer, Transparent Furniture Buffer Rubber Buffer Self-Adhesive Protective Buffer Stopper Stop Damper Door Buffer Pads Buffer Furniture 22 mm
- - 22 * 5 mm(20 Stück) €5,99 (20 pieces) https://www.amazon.nl/dp/B0CDVWKYM1?ref=ppx_yo2ov_dt_b_product_details&language=en_GB&th=1
+- Uni-Fine Elastic Buffer, Transparent Furniture Buffer Rubber Buffer Self-Adhesive Protective Buffer Stopper Stop Damper Door Buffer Pads Buffer Furniture 22 mm - 22 * 5 mm(20 Stück) €5,99 (20 pieces) https://www.amazon.nl/dp/B0CDVWKYM1?ref=ppx_yo2ov_dt_b_product_details&language=en_GB&th=1
 
 - 3D print filament eSun PLA+ yellow bottom frame 150 grams, top frame 140 grams and grille 16 grams. Total 300 grams, around ⅓ spool so around € 10,-.
 
