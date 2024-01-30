@@ -1,7 +1,7 @@
 # YouTube video
 
 # Electrical Diagram
-
+(/Thumbnail_V1.png)
 
 # CAD files
 
