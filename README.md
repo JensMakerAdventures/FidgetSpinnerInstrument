@@ -1,9 +1,11 @@
+![Fidget spinner instrument](/Thumbnail_V1.png)
 # YouTube video
 
 # Electrical Diagram
-(/Thumbnail_V1.png)
+![Electrical diagram](/FidgetSpinnerSynthV1_schem.png)
 
 # CAD files
+
 
 # Parts list
 - Fidget spinners Dutch craigslist €25,00 (48 pieces of which 8 were broken)
