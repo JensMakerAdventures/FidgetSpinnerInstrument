@@ -2,12 +2,14 @@
 
 ![Fidget spinner instrument](/Thumbnail_V1.png)
 ## YouTube video
+https://youtu.be/xIgIhpeJyNA
 
 ## Electrical Diagram
 ![Electrical diagram](/FidgetSpinnerSynthV1_schem.png)
 
 ## CAD files
 https://www.thingiverse.com/thing:6460128
+https://www.printables.com/model/744540-fidget-spinner-arduino-instrument
 
 ## Parts list
 - Fidget spinners Dutch craigslist €25,00 (48 pieces of which 8 were broken)
